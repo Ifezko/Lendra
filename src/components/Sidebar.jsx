@@ -1,0 +1,133 @@
+import React from 'react';
+import { Link, useLocation } from 'react-router-dom';
+import { motion, AnimatePresence } from 'framer-motion';
+import {
+  LayoutDashboard, BarChart3, ArrowDownToLine, ArrowUpFromLine,
+  Briefcase, Globe, History, Brain, FileText, HelpCircle, X,
+} from 'lucide-react';
+
+const NAV_ITEMS = [
+  { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
+  { to: '/score', label: 'Score', icon: BarChart3 },
+  { to: '/borrow', label: 'Borrow', icon: ArrowDownToLine },
+  { to: '/repay', label: 'Repay', icon: ArrowUpFromLine },
+  { to: '/position', label: 'Position', icon: Briefcase },
+  { to: '/trust', label: 'Trust', icon: Globe },
+  { to: '/history', label: 'History', icon: History },
+];
+
+const BOTTOM_ITEMS = [
+  { href: '#', label: 'Docs', icon: FileText },
+  { href: '#', label: 'Support', icon: HelpCircle },
+];
+
+export default function Sidebar({ isOpen, onClose, onOpenAi }) {
+  const location = useLocation();
+
+  const sidebar = (
+    <div className="flex flex-col h-full w-60 bg-brand-bg border-r border-brand-border">
+      {/* Logo */}
+      <div className="flex items-center gap-3 px-5 h-16 border-b border-brand-border flex-shrink-0">
+        <img
+          src={`${import.meta.env.BASE_URL}assets/lender-logo5x.png`}
+          alt="Lendra"
+          className="w-8 h-8 rounded-lg"
+        />
+        <span className="text-lg font-bold text-white tracking-tight">Lendra</span>
+        <span className="text-[10px] text-brand-muted px-1.5 py-0.5 rounded border border-brand-border ml-auto hidden lg:inline">
+          beta
+        </span>
+        {/* Mobile close */}
+        <button
+          onClick={onClose}
+          className="lg:hidden ml-auto p-1 rounded-lg text-brand-muted hover:text-white"
+        >
+          <X className="w-5 h-5" />
+        </button>
+      </div>
+
+      {/* Main Nav */}
+      <nav className="flex-1 overflow-y-auto py-3 px-3 space-y-0.5">
+        {NAV_ITEMS.map((item) => {
+          const Icon = item.icon;
+          const isActive = location.pathname === item.to ||
+            (item.to === '/dashboard' && location.pathname === '/');
+          return (
+            <Link
+              key={item.to}
+              to={item.to}
+              onClick={onClose}
+              className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all ${
+                isActive
+                  ? 'bg-brand-accent/10 text-brand-accent border border-brand-accent/20'
+                  : 'text-brand-muted hover:text-white hover:bg-brand-cardHover border border-transparent'
+              }`}
+            >
+              <Icon className={`w-4 h-4 ${isActive ? 'text-brand-accent' : ''}`} />
+              {item.label}
+            </Link>
+          );
+        })}
+
+        {/* Lendra AI */}
+        <button
+          onClick={() => { onOpenAi?.(); onClose?.(); }}
+          className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-brand-muted hover:text-white hover:bg-brand-cardHover border border-transparent transition-all"
+        >
+          <Brain className="w-4 h-4" />
+          Lendra AI
+        </button>
+      </nav>
+
+      {/* Bottom Links */}
+      <div className="border-t border-brand-border px-3 py-3 space-y-0.5">
+        {BOTTOM_ITEMS.map((item) => {
+          const Icon = item.icon;
+          return (
+            <a
+              key={item.label}
+              href={item.href}
+              className="flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-medium text-brand-muted hover:text-white hover:bg-brand-cardHover transition-all"
+            >
+              <Icon className="w-3.5 h-3.5" />
+              {item.label}
+            </a>
+          );
+        })}
+      </div>
+    </div>
+  );
+
+  return (
+    <>
+      {/* Desktop sidebar */}
+      <div className="hidden lg:block fixed left-0 top-0 bottom-0 z-30">
+        {sidebar}
+      </div>
+
+      {/* Mobile drawer */}
+      <AnimatePresence>
+        {isOpen && (
+          <>
+            <motion.div
+              className="fixed inset-0 bg-black/60 backdrop-blur-sm z-40 lg:hidden"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={onClose}
+            />
+            <motion.div
+              className="fixed left-0 top-0 bottom-0 z-50 lg:hidden"
+              initial={{ x: '-100%' }}
+              animate={{ x: 0 }}
+              exit={{ x: '-100%' }}
+              transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+            >
+              {sidebar}
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+    </>
+  );
+}

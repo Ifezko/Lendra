@@ -1,0 +1,12 @@
+{
+  "name": "@eitherway/chainlink-ui",
+  "version": "0.1.0-local",
+  "type": "module",
+  "main": "./index.js",
+  "types": "./index.d.ts",
+  "peerDependencies": {
+    "react": "^18.0.0",
+    "viem": "^2.0.0",
+    "wagmi": "^2.0.0"
+  }
+}

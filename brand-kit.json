@@ -1,0 +1,29 @@
+{
+  "brandKit": {
+    "id": "f965a7b3-852d-404b-8bc9-6181fbd1a7a7",
+    "name": "Brand Kit - 01/05/2026",
+    "colors": [],
+    "assets": [
+      {
+        "id": "98f132da-33fe-4791-97c2-dfba644bc5e9",
+        "fileName": "update-the-lendra-ai-assistant-behavior-and-language-handling.md",
+        "assetType": "document",
+        "mimeType": "application/octet-stream",
+        "metadata": {
+          "kind": "document",
+          "variants": [
+            {
+              "width": 0,
+              "height": 0,
+              "purpose": "original",
+              "fileName": "update-the-lendra-ai-assistant-behavior-and-language-handling.md",
+              "mimeType": "application/octet-stream",
+              "storageKey": "brand-kits/8f35c7a6-a2c8-4264-a893-526f49fec842/f965a7b3-852d-404b-8bc9-6181fbd1a7a7/update-the-lendra-ai-assistant-behavior-and-language-handling.md",
+              "fileSizeBytes": 40938
+            }
+          ]
+        }
+      }
+    ]
+  }
+}
