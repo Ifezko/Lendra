@@ -29,7 +29,7 @@ const STEPS = [
   {
     icon: Hash,
     title: 'Register a .sol domain via SNS.id',
-    desc: 'Claim your on-chain identity to earn trust points.',
+    desc: 'Claim your on-chain identity to earn trust signals.',
     pts: `+${SCORE_FACTORS.solIdentity.max} pts`,
     required: false,
   },

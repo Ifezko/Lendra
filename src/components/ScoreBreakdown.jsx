@@ -1,6 +1,6 @@
 import React from 'react';
 import { motion } from 'framer-motion';
-import { Clock, Zap, Calendar, Layers, Wallet, RefreshCw, CheckSquare, Globe, Hash, Award } from 'lucide-react';
+import { Clock, Zap, Calendar, Layers, Wallet, RefreshCw, CheckSquare, Globe, Hash, Award, TrendingUp, Star } from 'lucide-react';
 import { SCORE_FACTORS, BASE_SCORE } from '../hooks/useCreditScore';
 
 const FACTORS = [
@@ -10,10 +10,12 @@ const FACTORS = [
   { key: 'diversity', label: SCORE_FACTORS.diversity.label, max: SCORE_FACTORS.diversity.max, icon: Layers, desc: 'Unique protocols used', group: 'activity' },
   { key: 'portfolio', label: SCORE_FACTORS.portfolio.label, max: SCORE_FACTORS.portfolio.max, icon: Wallet, desc: 'Current holdings in USD', group: 'activity' },
   { key: 'repayment', label: SCORE_FACTORS.repayment.label, max: SCORE_FACTORS.repayment.max, icon: RefreshCw, desc: 'On-time repayments on Lendra', group: 'trust' },
-  { key: 'xVerification', label: SCORE_FACTORS.xVerification.label, max: SCORE_FACTORS.xVerification.max, icon: CheckSquare, desc: 'Verified X (Twitter) account', group: 'trust' },
+  { key: 'xVerification', label: SCORE_FACTORS.xVerification.label, max: SCORE_FACTORS.xVerification.max, icon: CheckSquare, desc: 'Verified X account via OAuth', group: 'trust' },
   { key: 'crossChain', label: SCORE_FACTORS.crossChain.label, max: SCORE_FACTORS.crossChain.max, icon: Globe, desc: 'EVM / BTC wallet credit via Ika', group: 'trust' },
   { key: 'solIdentity', label: SCORE_FACTORS.solIdentity.label, max: SCORE_FACTORS.solIdentity.max, icon: Hash, desc: 'SNS.id .sol domain linked', group: 'trust' },
   { key: 'superteam', label: SCORE_FACTORS.superteam.label, max: SCORE_FACTORS.superteam.max, icon: Award, desc: 'Superteam proof-of-work verified', group: 'trust' },
+  { key: 'creditMaturity', label: SCORE_FACTORS.creditMaturity.label, max: SCORE_FACTORS.creditMaturity.max, icon: Star, desc: 'Awarded as you climb levels', group: 'growth' },
+  { key: 'borrowGrowth', label: SCORE_FACTORS.borrowGrowth.label, max: SCORE_FACTORS.borrowGrowth.max, icon: TrendingUp, desc: 'Earned by repaying higher loan amounts', group: 'growth' },
 ];
 
 export default function ScoreBreakdown({ breakdown, walletAgeDays, txCount, monthlyActivity, protocolCount, balanceUsd }) {
@@ -28,10 +30,13 @@ export default function ScoreBreakdown({ breakdown, walletAgeDays, txCount, mont
     crossChain: breakdown.crossChain > 0 ? `+${breakdown.crossChain}` : '—',
     solIdentity: breakdown.solIdentity > 0 ? 'Linked' : '—',
     superteam: breakdown.superteam > 0 ? 'Verified' : '—',
+    creditMaturity: breakdown.creditMaturity > 0 ? `+${breakdown.creditMaturity}` : '—',
+    borrowGrowth: breakdown.borrowGrowth > 0 ? `+${breakdown.borrowGrowth}` : '—',
   };
 
   const activityFactors = FACTORS.filter((f) => f.group === 'activity');
   const trustFactors = FACTORS.filter((f) => f.group === 'trust');
+  const growthFactors = FACTORS.filter((f) => f.group === 'growth');
 
   const renderFactor = (factor, i) => {
     const value = breakdown[factor.key] || 0;
@@ -60,7 +65,7 @@ export default function ScoreBreakdown({ breakdown, walletAgeDays, txCount, mont
         <div className="h-2 bg-brand-border rounded-full overflow-hidden">
           <motion.div
             className="h-full rounded-full"
-            style={{ background: factor.group === 'trust' ? 'linear-gradient(90deg, #81D4FF, #4FA8CC)' : 'linear-gradient(90deg, #EC81FF, #B84FCC)' }}
+            style={{ background: factor.group === 'trust' ? 'linear-gradient(90deg, #81D4FF, #4FA8CC)' : factor.group === 'growth' ? 'linear-gradient(90deg, #FFD881, #E8A820)' : 'linear-gradient(90deg, #EC81FF, #B84FCC)' }}
             initial={{ width: 0 }}
             animate={{ width: `${pct}%` }}
             transition={{ delay: 0.2 + 0.1 * i, duration: 0.8, ease: 'easeOut' }}
@@ -74,16 +79,21 @@ export default function ScoreBreakdown({ breakdown, walletAgeDays, txCount, mont
   return (
     <div className="bg-brand-card rounded-2xl border border-brand-border p-6">
       <h3 className="text-lg font-bold text-white mb-1">Score Breakdown</h3>
-      <p className="text-xs text-brand-muted mb-5">Base: +{BASE_SCORE} | Activity + Trust signals</p>
+      <p className="text-xs text-brand-muted mb-5">Base: +{BASE_SCORE} | Wallet Activity | Earned Trust Signals</p>
 
-      <p className="text-[10px] uppercase tracking-wider text-brand-muted font-semibold mb-3">Activity Signals</p>
+      <p className="text-[10px] uppercase tracking-wider text-brand-muted font-semibold mb-3">Wallet Activity</p>
       <div className="space-y-4 mb-6">
         {activityFactors.map((f, i) => renderFactor(f, i))}
       </div>
 
-      <p className="text-[10px] uppercase tracking-wider text-brand-muted font-semibold mb-3">Trust Signals</p>
-      <div className="space-y-4">
+      <p className="text-[10px] uppercase tracking-wider text-brand-muted font-semibold mb-3">Earned Trust Signals</p>
+      <div className="space-y-4 mb-6">
         {trustFactors.map((f, i) => renderFactor(f, i + activityFactors.length))}
+      </div>
+
+      <p className="text-[10px] uppercase tracking-wider text-brand-muted font-semibold mb-3">Growth Bonuses</p>
+      <div className="space-y-4">
+        {growthFactors.map((f, i) => renderFactor(f, i + activityFactors.length + trustFactors.length))}
       </div>
     </div>
   );

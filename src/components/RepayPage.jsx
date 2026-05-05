@@ -267,7 +267,7 @@ export default function RepayPage() {
 
                   <button
                     onClick={handleRepay}
-                    className="w-full py-4 rounded-xl bg-gradient-to-r from-brand-accent to-brand-accentDark text-white font-bold text-base hover:opacity-90 transition-opacity"
+                    className="w-full py-4 rounded-xl bg-brand-accent text-[#0A0A0F] font-bold text-base hover:opacity-90 transition-opacity"
                   >
                     Sign & Repay ${activeLoan.totalRepay?.toFixed(4)}
                   </button>
@@ -286,7 +286,7 @@ export default function RepayPage() {
                 </p>
                 <Link
                   to="/borrow"
-                  className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-gradient-to-r from-brand-accent to-brand-accentDark text-white font-semibold text-sm hover:opacity-90 transition-opacity"
+                  className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-brand-accent text-[#0A0A0F] font-semibold text-sm hover:opacity-90 transition-opacity"
                 >
                   Borrow Funds
                   <ChevronRight className="w-4 h-4" />
@@ -416,7 +416,7 @@ export default function RepayPage() {
               <div className="flex gap-3">
                 <Link
                   to="/borrow"
-                  className="flex-1 py-3 rounded-xl bg-gradient-to-r from-brand-accent to-brand-accentDark text-white font-semibold text-sm text-center hover:opacity-90 transition-opacity"
+                  className="flex-1 py-3 rounded-xl bg-brand-accent text-[#0A0A0F] font-semibold text-sm text-center hover:opacity-90 transition-opacity"
                 >
                   Borrow Again
                 </Link>

@@ -61,7 +61,7 @@ export default function Dashboard({ scoreData }) {
             {activeLoan ? (
               <Link
                 to="/repay"
-                className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-gradient-to-r from-brand-accent to-brand-accentDark text-white font-semibold text-sm hover:opacity-90 transition-opacity"
+                className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-brand-accent text-[#0A0A0F] font-semibold text-sm hover:opacity-90 transition-opacity"
               >
                 <ArrowUpFromLine className="w-4 h-4" />
                 Repay ${activeLoan.totalRepay?.toFixed(2)}
@@ -70,7 +70,7 @@ export default function Dashboard({ scoreData }) {
             ) : (
               <Link
                 to="/borrow"
-                className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-gradient-to-r from-brand-accent to-brand-accentDark text-white font-semibold text-sm hover:opacity-90 transition-opacity"
+                className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-brand-accent text-[#0A0A0F] font-semibold text-sm hover:opacity-90 transition-opacity"
               >
                 <ArrowDownToLine className="w-4 h-4" />
                 Borrow Now

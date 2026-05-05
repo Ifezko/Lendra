@@ -23,7 +23,7 @@ import {
 
 function HeroScoreCard() {
   const [score, setScore] = useState(300);
-  const targetScore = 724;
+  const targetScore = 782;
 
   useEffect(() => {
     const duration = 2200;
@@ -39,7 +39,7 @@ function HeroScoreCard() {
     return () => clearTimeout(timer);
   }, []);
 
-  const pct = ((score - 300) / 570) * 100;
+  const pct = (score / 1000) * 100;
   const R = 80;
   const C = 2 * Math.PI * R;
   const offset = C - (C * pct) / 100;
@@ -92,7 +92,7 @@ function HeroScoreCard() {
             <div className="absolute inset-0 flex flex-col items-center justify-center">
               <span className="text-4xl font-extrabold text-white tabular-nums">{score}</span>
               <span className="text-xs font-semibold text-brand-accent mt-0.5">Excellent</span>
-              <span className="text-[10px] text-brand-muted">out of 870</span>
+              <span className="text-[10px] text-brand-muted">out of 1000</span>
             </div>
           </div>
         </div>
@@ -129,7 +129,7 @@ function HeroScoreCard() {
           <span className="text-[9px] text-brand-muted/40">|</span>
           <span className="text-[9px] font-medium text-brand-muted/80">Ika</span>
           <span className="text-[9px] text-brand-muted/40">|</span>
-          <span className="text-[9px] font-medium text-brand-muted/80">QVAC</span>
+          <span className="text-[9px] font-medium text-brand-muted/80">Lendra AI</span>
         </div>
       </div>
       <div className="absolute -inset-4 bg-gradient-to-br from-brand-accent/10 via-transparent to-brand-accentDark/10 rounded-3xl blur-3xl -z-10" />
@@ -147,8 +147,8 @@ const FAQ_DATA = [
   { q: 'Who is Lendra for?', a: 'Lendra is built for active Solana users, crypto-native freelancers, emerging-market DeFi users, lenders, protocols, and institutions that need better credit signals.' },
   { q: 'Can institutions use Lendra?', a: "Yes. Lendra's long-term direction includes private credit infrastructure for institutions. With privacy tools like Encrypt, institutional borrowers and lenders can explore onchain credit without exposing sensitive loan data, positions, or strategy details publicly." },
   { q: 'What does private borrowing mean?', a: 'Private borrowing means users or institutions can access credit while keeping sensitive financial data hidden. This can include credit score, loan size, repayment details, or lender position data.' },
-  { q: 'What role does QVAC play in Lendra?', a: "QVAC powers Lendra's local AI credit assistant. It can explain a user's credit score, suggest ways to improve eligibility, and translate explanations into different languages while running locally on the user's device." },
-  { q: 'Does Lendra send my wallet data to a cloud AI service?', a: "No. Lendra's AI assistant is designed to run locally using QVAC, so credit explanations can happen on-device without sending sensitive financial data to a centralized cloud AI provider." },
+  { q: 'How does Lendra AI work?', a: "Lendra AI is a local credit assistant that explains your score, suggests improvements, and translates explanations into different languages. It runs locally on your device without sending sensitive financial data to external cloud AI providers." },
+  { q: 'Does Lendra send my wallet data to a cloud AI service?', a: "No. Lendra AI runs locally on your device, so credit explanations happen without sending sensitive financial data to a centralized cloud AI provider." },
   { q: 'Is Lendra a bank?', a: 'No. Lendra is not a bank. Lendra provides wallet-based credit scoring and DeFi access infrastructure. Loan availability may depend on partner protocols, jurisdiction, eligibility checks, and risk rules.' },
 ];
 
@@ -311,7 +311,7 @@ export default function Landing() {
                 Lendra scans your Solana wallet, builds a credit profile, and shows what you can borrow based on real onchain behavior.
               </p>
               <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 mb-6">
-                <WalletMultiButton className="!rounded-xl !font-bold !text-sm !h-12 !px-8" />
+                <WalletMultiButton className="!rounded-xl !font-bold !text-sm !h-12 !px-8 !bg-brand-accent !text-[#0A0A0F]" />
                 <button onClick={scrollToHow} className="flex items-center gap-2 px-5 h-12 rounded-xl border border-brand-border text-sm font-semibold text-brand-muted hover:text-white hover:border-brand-accent/30 transition-colors">
                   See how it works <ChevronDown className="w-4 h-4" />
                 </button>
@@ -452,7 +452,7 @@ export default function Landing() {
           <motion.div initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }}>
             <h2 className="text-2xl md:text-3xl font-bold text-white mb-3">See what your wallet can unlock.</h2>
             <p className="text-sm text-brand-muted mb-8 max-w-md mx-auto">Start with your wallet history. Get a credit profile in minutes.</p>
-            <WalletMultiButton className="!rounded-xl !font-bold !text-sm !h-12 !px-8 !mx-auto" />
+            <WalletMultiButton className="!rounded-xl !font-bold !text-sm !h-12 !px-8 !mx-auto !bg-brand-accent !text-[#0A0A0F]" />
             <p className="text-xs text-brand-muted mt-4">Built on Solana. Designed for active wallets.</p>
           </motion.div>
         </div>

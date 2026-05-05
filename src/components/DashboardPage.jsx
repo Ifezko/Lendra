@@ -7,7 +7,8 @@ import {
 } from 'lucide-react';
 import ScoreRing from './ScoreRing';
 import { useAppContext } from '../App';
-import { SCORE_FACTORS, BASE_SCORE, LOAN_LEVELS, calculateBond } from '../hooks/useCreditScore';
+import { SCORE_FACTORS, BASE_SCORE, LOAN_LEVELS, calculateBond, meetsSpendGate, getSpendGateAmount } from '../hooks/useCreditScore';
+import QuickActions from './QuickActions';
 
 function Card({ children, className = '' }) {
   return (
@@ -50,8 +51,8 @@ export default function DashboardPage({ scoreData }) {
               Scan your wallet to generate your first credit profile.
             </p>
             <Link
-              to="/score"
-              className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-gradient-to-r from-brand-accent to-brand-accentDark text-white font-semibold text-sm"
+              to="/trust-score"
+              className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-brand-accent text-[#0A0A0F] font-semibold text-sm"
             >
               Run wallet scan
               <ChevronRight className="w-4 h-4" />
@@ -69,7 +70,8 @@ export default function DashboardPage({ scoreData }) {
     : '';
 
   const scorePassed = score >= 350;
-  const spendPassed = spend90d >= 50;
+  const spendGate = getSpendGateAmount(loanLevel);
+  const spendPassed = meetsSpendGate(loanLevel, spend90d);
   const noActiveLoan = !activeLoan;
   const repaymentPassed = loanLevel.level <= 1 || cleanRepayments >= (loanLevel.repayments || 0);
 
@@ -84,6 +86,8 @@ export default function DashboardPage({ scoreData }) {
     { key: 'crossChain', label: 'Cross-Chain', value: breakdown.crossChain, max: SCORE_FACTORS.crossChain.max },
     { key: 'solIdentity', label: '.sol ID', value: breakdown.solIdentity, max: SCORE_FACTORS.solIdentity.max },
     { key: 'superteam', label: 'Superteam', value: breakdown.superteam, max: SCORE_FACTORS.superteam.max },
+    { key: 'creditMaturity', label: 'Maturity', value: breakdown.creditMaturity || 0, max: SCORE_FACTORS.creditMaturity.max },
+    { key: 'borrowGrowth', label: 'Growth', value: breakdown.borrowGrowth || 0, max: SCORE_FACTORS.borrowGrowth.max },
   ];
 
   return (
@@ -153,7 +157,7 @@ export default function DashboardPage({ scoreData }) {
                 )}
                 <Link
                   to="/borrow"
-                  className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-brand-accent to-brand-accentDark text-white text-xs font-semibold"
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-brand-accent text-[#0A0A0F] text-xs font-semibold"
                 >
                   Borrow now <ChevronRight className="w-3 h-3" />
                 </Link>
@@ -185,7 +189,7 @@ export default function DashboardPage({ scoreData }) {
             </p>
             <div className="grid grid-cols-2 gap-2">
               <GateBadge passed={scorePassed} label={`Score ≥ 350`} />
-              <GateBadge passed={spendPassed} label="90d spend ≥ $50" />
+              <GateBadge passed={spendPassed} label={`90d spend ≥ $${spendGate}`} />
               <GateBadge passed={noActiveLoan} label="No active loan" />
               <GateBadge passed={repaymentPassed} label="Repayment req" />
             </div>
@@ -200,12 +204,12 @@ export default function DashboardPage({ scoreData }) {
                 <BarChart3 className="w-4 h-4 text-brand-accent" />
                 <h3 className="text-sm font-bold text-white">Score Summary</h3>
               </div>
-              <Link to="/score" className="text-xs text-brand-accent hover:underline flex items-center gap-1">
+              <Link to="/trust-score" className="text-xs text-brand-accent hover:underline flex items-center gap-1">
                 View full breakdown <ChevronRight className="w-3 h-3" />
               </Link>
             </div>
             <div className="text-[10px] text-brand-muted mb-3">Base +{BASE_SCORE}</div>
-            <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+            <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-2">
               {breakdownItems.map((item) => {
                 const pct = item.max > 0 ? (item.value / item.max) * 100 : 0;
                 return (
@@ -252,7 +256,7 @@ export default function DashboardPage({ scoreData }) {
                 </div>
                 <Link
                   to="/repay"
-                  className="block w-full text-center mt-2 px-4 py-2 rounded-xl bg-gradient-to-r from-brand-accent to-brand-accentDark text-white text-xs font-semibold"
+                  className="block w-full text-center mt-2 px-4 py-2 rounded-xl bg-brand-accent text-[#0A0A0F] text-xs font-semibold"
                 >
                   Repay ${activeLoan.totalRepay?.toFixed(2)}
                 </Link>
@@ -307,7 +311,7 @@ export default function DashboardPage({ scoreData }) {
               </div>
             </div>
             <Link
-              to="/trust"
+              to="/trust-score"
               className="block w-full text-center mt-3 px-4 py-2 rounded-xl border border-brand-accent/20 text-brand-accent text-xs font-semibold hover:bg-brand-accent/5 transition-colors"
             >
               Boost trust profile
@@ -327,7 +331,7 @@ export default function DashboardPage({ scoreData }) {
             </p>
             <button
               onClick={() => ctx?.openAiDrawer?.()}
-              className="w-full px-4 py-2 rounded-xl bg-gradient-to-r from-brand-accent to-brand-accentDark text-white text-xs font-semibold hover:opacity-90 transition-opacity"
+              className="w-full px-4 py-2 rounded-xl bg-brand-accent text-[#0A0A0F] text-xs font-semibold hover:opacity-90 transition-opacity"
             >
               Ask about my score
             </button>
@@ -351,6 +355,11 @@ export default function DashboardPage({ scoreData }) {
               Generate share card
             </Link>
           </Card>
+        </motion.div>
+
+        {/* Quick Actions */}
+        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.45 }} className="lg:col-span-3">
+          <QuickActions />
         </motion.div>
       </div>
     </div>

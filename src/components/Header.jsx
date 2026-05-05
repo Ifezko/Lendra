@@ -11,7 +11,7 @@ export default function Header({ onMenuToggle, showMenu }) {
 
   return (
     <header className="sticky top-0 z-30 backdrop-blur-xl bg-brand-bg/80 border-b border-brand-border">
-      <div className="px-4 h-14 flex items-center justify-between">
+      <div className="max-w-6xl mx-auto px-4 h-14 flex items-center justify-between">
         <div className="flex items-center gap-3">
           {/* Mobile hamburger */}
           {showMenu && (

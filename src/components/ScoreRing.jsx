@@ -14,7 +14,7 @@ export default function ScoreRing({ score, tier, animate = true }) {
   const crossChainBoost = ctx?.scoreData?.crossChainBoost || 0;
 
   const [displayed, setDisplayed] = useState(0);
-  const percentage = ((score - 300) / (870 - 300)) * 100;
+  const percentage = Math.min(100, (score / 1000) * 100);
   const strokeDashoffset = CIRCUMFERENCE - (CIRCUMFERENCE * percentage) / 100;
 
   useEffect(() => {
@@ -28,7 +28,7 @@ export default function ScoreRing({ score, tier, animate = true }) {
       const elapsed = Date.now() - startTime;
       const progress = Math.min(elapsed / duration, 1);
       const eased = 1 - Math.pow(1 - progress, 3);
-      setDisplayed(Math.floor(300 + (score - 300) * eased));
+      setDisplayed(Math.floor(score * eased));
       if (progress < 1) requestAnimationFrame(tick);
     };
     requestAnimationFrame(tick);
@@ -93,7 +93,7 @@ export default function ScoreRing({ score, tier, animate = true }) {
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.8, duration: 0.5 }}
             >
-              {tier?.emoji} {tier?.label}
+              {tier?.label}
             </motion.span>
             <motion.span
               className="text-xs text-brand-muted mt-1"
@@ -101,7 +101,7 @@ export default function ScoreRing({ score, tier, animate = true }) {
               animate={{ opacity: 1 }}
               transition={{ delay: 1.2 }}
             >
-              out of 870
+              out of 1000
             </motion.span>
           </>
         )}

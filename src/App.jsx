@@ -1,19 +1,21 @@
 import React, { useMemo, useEffect, createContext, useContext, useState } from 'react';
-import { Routes, Route, Navigate } from 'react-router-dom';
+import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { ConnectionProvider, WalletProvider } from '@solana/wallet-adapter-react';
 import { WalletModalProvider } from '@solana/wallet-adapter-react-ui';
 import { useWallet } from '@solana/wallet-adapter-react';
 import Header from './components/Header';
 import Sidebar from './components/Sidebar';
 import Landing from './components/Landing';
-import Dashboard from './components/Dashboard';
 import DashboardPage from './components/DashboardPage';
+import TrustScorePage from './components/TrustScorePage';
 import BorrowPage from './components/BorrowPage';
 import RepayPage from './components/RepayPage';
-import TrustPage from './components/TrustPage';
+import CrossChainPage from './components/CrossChainPage';
+import AlertsPage from './components/AlertsPage';
 import SocialCreditCard from './components/SocialCreditCard';
 import LoadingState from './components/LoadingState';
 import AiDrawer from './components/AiDrawer';
+import AdminLayout from './admin/AdminLayout';
 import { useCreditScore } from './hooks/useCreditScore';
 import { useLoan } from './hooks/useLoan';
 import { usePrivateMode } from './hooks/usePrivateMode';
@@ -170,7 +172,7 @@ function AppContent() {
   const adjustedScoreData = scoreData
     ? {
         ...scoreData,
-        score: Math.min(870, Math.max(200, scoreData.score + scoreAdjustment + crossChainBoost)),
+        score: Math.min(1000, Math.max(100, scoreData.score + scoreAdjustment + crossChainBoost)),
         crossChainBoost,
         connectedChains: ika.connectedChains,
         walletAddress: publicKey?.toBase58() || '',
@@ -248,13 +250,18 @@ function AppContent() {
               <Routes>
                 <Route path="/" element={<Navigate to="/dashboard" replace />} />
                 <Route path="/dashboard" element={<DashboardPage scoreData={adjustedScoreData} />} />
-                <Route path="/score" element={adjustedScoreData ? <Dashboard scoreData={adjustedScoreData} /> : <LoadingState />} />
+                <Route path="/trust-score" element={<TrustScorePage scoreData={adjustedScoreData} />} />
+                <Route path="/trust-score/cross-chain" element={<CrossChainPage />} />
                 <Route path="/borrow" element={<BorrowPage />} />
                 <Route path="/repay" element={<RepayPage />} />
                 <Route path="/position" element={<RepayPage />} />
-                <Route path="/trust" element={<TrustPage />} />
+                <Route path="/alerts" element={<AlertsPage />} />
                 <Route path="/history" element={<RepayPage />} />
                 <Route path="/share" element={<SocialCreditCard />} />
+                {/* Legacy redirects */}
+                <Route path="/score" element={<Navigate to="/trust-score" replace />} />
+                <Route path="/trust" element={<Navigate to="/trust-score" replace />} />
+                <Route path="/cross-chain" element={<Navigate to="/trust-score/cross-chain" replace />} />
                 <Route path="*" element={<Navigate to="/dashboard" replace />} />
               </Routes>
             )}
@@ -307,10 +314,25 @@ function WalletContextProvider({ children }) {
   );
 }
 
+function AppRouter() {
+  const location = useLocation();
+  const isAdmin = location.pathname.startsWith('/admin');
+
+  if (isAdmin) {
+    return (
+      <Routes>
+        <Route path="/admin/*" element={<AdminLayout />} />
+      </Routes>
+    );
+  }
+
+  return <AppContent />;
+}
+
 export default function App() {
   return (
     <WalletContextProvider>
-      <AppContent />
+      <AppRouter />
     </WalletContextProvider>
   );
 }

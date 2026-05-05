@@ -2,17 +2,17 @@ import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  LayoutDashboard, BarChart3, ArrowDownToLine, ArrowUpFromLine,
-  Briefcase, Globe, History, Brain, FileText, HelpCircle, X,
+  LayoutDashboard, ArrowDownToLine, ArrowUpFromLine,
+  Briefcase, ShieldCheck, History, Brain, FileText, HelpCircle, X, Bell,
 } from 'lucide-react';
 
 const NAV_ITEMS = [
   { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { to: '/score', label: 'Score', icon: BarChart3 },
+  { to: '/trust-score', label: 'Trust Score', icon: ShieldCheck },
   { to: '/borrow', label: 'Borrow', icon: ArrowDownToLine },
   { to: '/repay', label: 'Repay', icon: ArrowUpFromLine },
   { to: '/position', label: 'Position', icon: Briefcase },
-  { to: '/trust', label: 'Trust', icon: Globe },
+  { to: '/alerts', label: 'Alerts', icon: Bell },
   { to: '/history', label: 'History', icon: History },
 ];
 
@@ -25,7 +25,7 @@ export default function Sidebar({ isOpen, onClose, onOpenAi }) {
   const location = useLocation();
 
   const sidebar = (
-    <div className="flex flex-col h-full w-60 bg-brand-bg border-r border-brand-border">
+    <div className="sidebar-container flex flex-col h-screen w-60 bg-brand-bg border-r border-brand-border">
       {/* Logo */}
       <div className="flex items-center gap-3 px-5 h-16 border-b border-brand-border flex-shrink-0">
         <img
@@ -47,11 +47,13 @@ export default function Sidebar({ isOpen, onClose, onOpenAi }) {
       </div>
 
       {/* Main Nav */}
-      <nav className="flex-1 overflow-y-auto py-3 px-3 space-y-0.5">
+      <nav className="flex-1 min-h-0 overflow-y-auto py-3 px-3 space-y-0.5 sidebar-scroll">
         {NAV_ITEMS.map((item) => {
           const Icon = item.icon;
-          const isActive = location.pathname === item.to ||
-            (item.to === '/dashboard' && location.pathname === '/');
+          const isActive =
+            location.pathname === item.to ||
+            (item.to === '/dashboard' && location.pathname === '/') ||
+            (item.to === '/trust-score' && location.pathname.startsWith('/trust-score'));
           return (
             <Link
               key={item.to}
@@ -80,7 +82,7 @@ export default function Sidebar({ isOpen, onClose, onOpenAi }) {
       </nav>
 
       {/* Bottom Links */}
-      <div className="border-t border-brand-border px-3 py-3 space-y-0.5">
+      <div className="border-t border-brand-border px-3 py-3 space-y-0.5 flex-shrink-0">
         {BOTTOM_ITEMS.map((item) => {
           const Icon = item.icon;
           return (
