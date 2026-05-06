@@ -280,4 +280,4 @@ Lendra is currently in beta/simulation mode. The Lendra Credit Pool is not yet l
 # 3. Partner integration documentation
 
 ```text
-/[Integrations.md](https://github.com/user-attachments/files/27452626/Integrations.md)
+/public/assets/Integrations.md
