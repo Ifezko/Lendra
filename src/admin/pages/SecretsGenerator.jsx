@@ -6,17 +6,17 @@ import {
 } from 'lucide-react';
 
 const TOKEN_TYPES = [
-  { id: 'api_key', label: 'API Key', prefix: 'lndr_', defaultLength: 48, desc: 'General-purpose API key' },
-  { id: 'webhook_secret', label: 'Webhook Secret', prefix: 'whsec_', defaultLength: 40, desc: 'For verifying webhook signatures' },
-  { id: 'jwt_secret', label: 'JWT Secret', prefix: '', defaultLength: 64, desc: 'HMAC signing key for JWTs' },
-  { id: 'encryption_key', label: 'Encryption Key', prefix: '', defaultLength: 64, desc: 'AES-256 encryption key (hex)' },
-  { id: 'service_token', label: 'Service Token', prefix: 'svc_', defaultLength: 48, desc: 'Inter-service auth token' },
-  { id: 'partner_key', label: 'Partner Key', prefix: 'ptnr_', defaultLength: 32, desc: 'Third-party partner API key' },
-  { id: 'signing_key', label: 'Signing Key', prefix: 'sk_', defaultLength: 56, desc: 'Cryptographic signing material' },
-  { id: 'access_token', label: 'Access Token', prefix: 'at_', defaultLength: 44, desc: 'Short-lived access token' },
+  { id: 'telegram_webhook', label: 'Telegram Webhook Secret', prefix: 'lendra_tg_', defaultLength: 32, desc: 'For Telegram bot webhook verification', envSuffix: 'TELEGRAM_WEBHOOK_SECRET' },
+  { id: 'quicknode_webhook', label: 'QuickNode Webhook Secret', prefix: 'lendra_qn_', defaultLength: 32, desc: 'For QuickNode webhook signature verification', envSuffix: 'QUICKNODE_WEBHOOK_SECRET' },
+  { id: 'admin_session', label: 'Admin Session Secret', prefix: 'lendra_admin_', defaultLength: 48, desc: 'HMAC signing key for admin sessions', envSuffix: 'ADMIN_SESSION_SECRET' },
+  { id: 'partner_webhook', label: 'Partner Webhook Secret', prefix: 'lendra_partner_', defaultLength: 32, desc: 'Shared secret for partner webhook callbacks', envSuffix: 'PARTNER_WEBHOOK_SECRET' },
+  { id: 'wallet_credit_api', label: 'Wallet Credit API Key', prefix: 'lendra_api_', defaultLength: 48, desc: 'API key for the Wallet Credit scoring service', envSuffix: 'WALLET_CREDIT_API_SECRET' },
+  { id: 'internal_service', label: 'Internal Service Token', prefix: 'lendra_internal_', defaultLength: 64, desc: 'Inter-service authentication token', envSuffix: 'INTERNAL_SERVICE_TOKEN' },
+  { id: 'invite_token', label: 'Invite Token', prefix: 'lendra_invite_', defaultLength: 32, desc: 'One-time invite token for partner onboarding', envSuffix: 'INVITE_TOKEN_SECRET' },
+  { id: 'custom', label: 'Custom Secret', prefix: '', defaultLength: 48, desc: 'Generic secret with no prefix', envSuffix: null },
 ];
 
-const ENVIRONMENTS = ['production', 'staging', 'development', 'testing'];
+const ENVIRONMENTS = ['production', 'staging', 'development'];
 
 async function generateSecureRandom(length) {
   const arr = new Uint8Array(length);
@@ -38,13 +38,17 @@ function maskSecret(s) {
 }
 
 function suggestEnvName(name, type, env) {
+  const tt = TOKEN_TYPES.find((t) => t.id === type);
+  if (tt && tt.envSuffix) {
+    const prefix = env !== 'production' ? `${env.toUpperCase()}_` : '';
+    return `${prefix}${tt.envSuffix}`;
+  }
   const base = name
     .toUpperCase()
     .replace(/[^A-Z0-9]+/g, '_')
     .replace(/^_|_$/g, '');
-  const suffix = type === 'encryption_key' ? '_KEY' : type === 'jwt_secret' ? '_JWT_SECRET' : '_SECRET';
   const prefix = env !== 'production' ? `${env.toUpperCase()}_` : '';
-  return `${prefix}LENDRA_${base}${suffix}`;
+  return `${prefix}LENDRA_${base}_SECRET`;
 }
 
 export default function SecretsGenerator() {
@@ -272,19 +276,22 @@ export default function SecretsGenerator() {
             {/* Length */}
             <div>
               <label className="block text-xs font-medium text-slate-400 mb-1.5">
-                Length <span className="text-slate-600">({length} chars)</span>
+                Length <span className="text-slate-600">({length} bytes)</span>
               </label>
-              <input
-                type="range"
-                min={16}
-                max={128}
-                value={length}
-                onChange={(e) => setCustomLength(Number(e.target.value))}
-                className="w-full accent-[#EC81FF]"
-              />
-              <div className="flex justify-between text-[10px] text-slate-600 mt-1">
-                <span>16</span>
-                <span>128</span>
+              <div className="flex flex-wrap gap-1.5">
+                {[32, 48, 64].map((len) => (
+                  <button
+                    key={len}
+                    onClick={() => setCustomLength(len === tokenType.defaultLength ? null : len)}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all border ${
+                      length === len
+                        ? 'bg-[#EC81FF]/10 text-[#EC81FF] border-[#EC81FF]/30'
+                        : 'text-slate-400 border-[#1E1E2A] hover:border-slate-600'
+                    }`}
+                  >
+                    {len}
+                  </button>
+                ))}
               </div>
             </div>
 

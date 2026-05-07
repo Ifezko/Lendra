@@ -1,6 +1,7 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { useConnection, useWallet } from '@solana/wallet-adapter-react';
-import { Transaction, SystemProgram, PublicKey, LAMPORTS_PER_SOL } from '@solana/web3.js';
+import { Transaction, SystemProgram, PublicKey } from '@solana/web3.js';
+import { insertPartnerEvent, getPartnerEvents, upsertWalletProfile } from '../lib/db';
 
 // Encrypt Protocol integration (pre-alpha, devnet)
 // In production, this would use the Encrypt SDK to create FHE ciphertext accounts.
@@ -11,16 +12,39 @@ const ENCRYPT_PROGRAM_ID = 'enc1yptNativeProgram111111111111111111111';
 const DEVNET_MARKER = new PublicKey('1nc1nerator11111111111111111111111111111111');
 
 export function usePrivateMode() {
-  const [isPrivate, setIsPrivate] = useState(() => {
-    try { return localStorage.getItem('lendra-private-mode') === 'true'; } catch { return false; }
-  });
-  const [encryptionTx, setEncryptionTx] = useState(() => {
-    try { return localStorage.getItem('lendra-encrypt-tx') || null; } catch { return null; }
-  });
+  const [isPrivate, setIsPrivate] = useState(false);
+  const [encryptionTx, setEncryptionTx] = useState(null);
   const [isEncrypting, setIsEncrypting] = useState(false);
   const [encryptError, setEncryptError] = useState(null);
   const { connection } = useConnection();
   const { publicKey, signTransaction } = useWallet();
+
+  // Load from DB on wallet connect, fallback to localStorage
+  useEffect(() => {
+    if (!publicKey) return;
+    const wallet = publicKey.toBase58();
+    (async () => {
+      try {
+        const events = await getPartnerEvents(wallet, 'encrypt');
+        const latest = events.find((e) => e.event_type === 'private_mode_enabled' || e.event_type === 'private_mode_disabled');
+        if (latest) {
+          setIsPrivate(latest.event_type === 'private_mode_enabled');
+          if (latest.metadata?.txSignature) setEncryptionTx(latest.metadata.txSignature);
+        } else {
+          // Fallback
+          try {
+            setIsPrivate(localStorage.getItem('lendra-private-mode') === 'true');
+            setEncryptionTx(localStorage.getItem('lendra-encrypt-tx') || null);
+          } catch { /* ignore */ }
+        }
+      } catch {
+        try {
+          setIsPrivate(localStorage.getItem('lendra-private-mode') === 'true');
+          setEncryptionTx(localStorage.getItem('lendra-encrypt-tx') || null);
+        } catch { /* ignore */ }
+      }
+    })();
+  }, [publicKey]);
 
   const confirmWithPolling = useCallback(async (sig, timeout = 60000) => {
     const start = Date.now();
@@ -80,6 +104,16 @@ export function usePrivateMode() {
       localStorage.setItem('lendra-private-mode', 'true');
       localStorage.setItem('lendra-encrypt-tx', sig);
 
+      // Persist to partner_events + wallet_profiles
+      const wallet = publicKey.toBase58();
+      insertPartnerEvent({
+        wallet_address: wallet,
+        partner: 'encrypt',
+        event_type: 'private_mode_enabled',
+        metadata: { txSignature: sig },
+      }).catch(() => {});
+      upsertWalletProfile(wallet, { encrypt_private_mode: true }).catch(() => {});
+
       return true;
     } catch (err) {
       console.error('Encrypt private mode failed:', err);
@@ -93,8 +127,18 @@ export function usePrivateMode() {
   const disablePrivateMode = useCallback(() => {
     setIsPrivate(false);
     localStorage.setItem('lendra-private-mode', 'false');
-    // Keep the tx hash for history
-  }, []);
+
+    if (publicKey) {
+      const wallet = publicKey.toBase58();
+      insertPartnerEvent({
+        wallet_address: wallet,
+        partner: 'encrypt',
+        event_type: 'private_mode_disabled',
+        metadata: {},
+      }).catch(() => {});
+      upsertWalletProfile(wallet, { encrypt_private_mode: false }).catch(() => {});
+    }
+  }, [publicKey]);
 
   const togglePrivateMode = useCallback(async () => {
     if (isPrivate) {

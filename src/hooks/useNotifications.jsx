@@ -1,40 +1,9 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useWallet } from '@solana/wallet-adapter-react';
+import { supabase } from '../lib/supabase';
+import { upsertWalletProfile } from '../lib/db';
 
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
-const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
-
-// Fallback to localStorage when Supabase table not available
-const STORAGE_KEY = 'lendra_notifications';
 const PREFS_KEY = 'lendra_alert_prefs';
-const TELEGRAM_KEY = 'lendra_telegram';
-
-function getStoredNotifications(wallet) {
-  try {
-    const all = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
-    return all[wallet] || [];
-  } catch { return []; }
-}
-
-function storeNotification(wallet, notification) {
-  try {
-    const all = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
-    if (!all[wallet]) all[wallet] = [];
-    all[wallet].unshift(notification);
-    if (all[wallet].length > 100) all[wallet] = all[wallet].slice(0, 100);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(all));
-  } catch (e) { console.error('Failed to store notification:', e); }
-}
-
-function markReadInStorage(wallet, id) {
-  try {
-    const all = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
-    if (all[wallet]) {
-      all[wallet] = all[wallet].map((n) => n.id === id ? { ...n, read: true } : n);
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(all));
-    }
-  } catch (e) { console.error('Failed to mark read:', e); }
-}
 
 const DEFAULT_PREFS = {
   telegramEnabled: false,
@@ -45,73 +14,107 @@ const DEFAULT_PREFS = {
   levelAlerts: true,
 };
 
+// Map DB rows → UI notification shape.
+// The DB schema uses: channel, event_type, status, recipient, message, metadata.
+// Extra UI fields (title, read, cta_label, cta_route) live in metadata JSONB.
+function dbRowToNotification(row) {
+  const meta = row.metadata || {};
+  return {
+    ...row,
+    title: meta.title || row.event_type,
+    read: meta.read === true,
+    cta_label: meta.cta_label || null,
+    cta_route: meta.cta_route || null,
+    delivery_channel: row.channel,
+    delivery_status: row.status,
+  };
+}
+
 export function useNotifications() {
-  const { publicKey, connected } = useWallet();
+  const { publicKey } = useWallet();
   const wallet = publicKey?.toBase58() || '';
   const [notifications, setNotifications] = useState([]);
   const [loading, setLoading] = useState(true);
   const [prefs, setPrefs] = useState(DEFAULT_PREFS);
   const [telegram, setTelegram] = useState({ connected: false, chatId: null });
-  const supabaseAvailable = useRef(false);
 
-  // Load preferences from localStorage
+  // Load prefs from localStorage (lightweight, no DB table needed)
   useEffect(() => {
     if (!wallet) return;
     try {
       const stored = JSON.parse(localStorage.getItem(`${PREFS_KEY}_${wallet}`) || 'null');
       if (stored) setPrefs(stored);
-      const tg = JSON.parse(localStorage.getItem(`${TELEGRAM_KEY}_${wallet}`) || 'null');
-      if (tg) setTelegram(tg);
     } catch { /* ignore */ }
+  }, [wallet]);
+
+  // Load telegram state from wallet_profiles
+  useEffect(() => {
+    if (!wallet) return;
+    (async () => {
+      try {
+        const { data } = await supabase
+          .from('wallet_profiles')
+          .select('telegram_connected, telegram_chat_id, telegram_username')
+          .eq('wallet_address', wallet)
+          .maybeSingle();
+        if (data) {
+          setTelegram({
+            connected: data.telegram_connected || false,
+            chatId: data.telegram_chat_id || null,
+            username: data.telegram_username || null,
+          });
+        }
+      } catch { /* ignore */ }
+    })();
   }, [wallet]);
 
   const savePrefs = useCallback((newPrefs) => {
     setPrefs(newPrefs);
     if (wallet) {
       localStorage.setItem(`${PREFS_KEY}_${wallet}`, JSON.stringify(newPrefs));
+      // Sync alert flags to wallet_profiles
+      upsertWalletProfile(wallet, {
+        telegram_alerts_enabled: newPrefs.telegramEnabled,
+        telegram_score_alerts_enabled: newPrefs.scoreDropAlerts,
+        telegram_loan_alerts_enabled: newPrefs.loanAlerts,
+        telegram_bond_alerts_enabled: newPrefs.bondAlerts,
+        telegram_repayment_alerts_enabled: newPrefs.repaymentReminders,
+        telegram_level_alerts_enabled: newPrefs.levelAlerts,
+      }).catch(() => {});
     }
   }, [wallet]);
 
   const saveTelegram = useCallback((tgState) => {
     setTelegram(tgState);
     if (wallet) {
-      localStorage.setItem(`${TELEGRAM_KEY}_${wallet}`, JSON.stringify(tgState));
+      upsertWalletProfile(wallet, {
+        telegram_connected: tgState.connected || false,
+        telegram_chat_id: tgState.chatId || null,
+        telegram_username: tgState.username || null,
+        telegram_connected_at: tgState.connected ? new Date().toISOString() : null,
+      }).catch(() => {});
     }
   }, [wallet]);
 
-  // Try fetching from Supabase, fall back to localStorage
+  // Fetch notifications from Supabase
   const fetchNotifications = useCallback(async () => {
     if (!wallet) { setNotifications([]); setLoading(false); return; }
     setLoading(true);
-
-    if (SUPABASE_URL && SUPABASE_ANON_KEY) {
-      try {
-        const res = await fetch(
-          `${SUPABASE_URL}/rest/v1/notification_events?wallet_address=eq.${wallet}&order=created_at.desc&limit=50`,
-          {
-            headers: {
-              apikey: SUPABASE_ANON_KEY,
-              Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
-            },
-          }
-        );
-        if (res.ok) {
-          const data = await res.json();
-          if (Array.isArray(data)) {
-            supabaseAvailable.current = true;
-            setNotifications(data);
-            setLoading(false);
-            return;
-          }
-        }
-      } catch { /* fall through */ }
+    try {
+      const { data, error } = await supabase
+        .from('notification_events')
+        .select('*')
+        .eq('wallet_address', wallet)
+        .order('created_at', { ascending: false })
+        .limit(50);
+      if (error) throw error;
+      setNotifications((data || []).map(dbRowToNotification));
+    } catch (err) {
+      console.warn('[notifications] fetch error:', err.message || err);
+      setNotifications([]);
+    } finally {
+      setLoading(false);
     }
-
-    // Fallback to localStorage
-    supabaseAvailable.current = false;
-    const local = getStoredNotifications(wallet);
-    setNotifications(local);
-    setLoading(false);
   }, [wallet]);
 
   useEffect(() => {
@@ -119,61 +122,68 @@ export function useNotifications() {
   }, [fetchNotifications]);
 
   const markAsRead = useCallback(async (id) => {
-    setNotifications((prev) => prev.map((n) => n.id === id ? { ...n, read: true } : n));
-    if (supabaseAvailable.current && SUPABASE_URL && SUPABASE_ANON_KEY) {
-      try {
-        await fetch(`${SUPABASE_URL}/rest/v1/notification_events?id=eq.${id}`, {
-          method: 'PATCH',
-          headers: {
-            apikey: SUPABASE_ANON_KEY,
-            Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
-            'Content-Type': 'application/json',
-            Prefer: 'return=minimal',
-          },
-          body: JSON.stringify({ read: true }),
-        });
-      } catch { /* ignore */ }
-    } else {
-      markReadInStorage(wallet, id);
+    setNotifications((prev) =>
+      prev.map((n) => n.id === id ? { ...n, read: true } : n)
+    );
+    try {
+      // Read flag stored in metadata JSONB
+      const { data: row } = await supabase
+        .from('notification_events')
+        .select('metadata')
+        .eq('id', id)
+        .maybeSingle();
+      const newMeta = { ...(row?.metadata || {}), read: true };
+      const { error } = await supabase
+        .from('notification_events')
+        .update({ metadata: newMeta, status: 'read' })
+        .eq('id', id);
+      if (error) console.warn('[markAsRead] update error:', error.message);
+    } catch (err) {
+      console.warn('[markAsRead] error:', err.message);
     }
-  }, [wallet]);
+  }, []);
 
   const addNotification = useCallback(async (event) => {
-    const notification = {
-      id: crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`,
-      wallet_address: wallet,
-      event_type: event.event_type,
-      title: event.title,
-      message: event.message,
-      delivery_channel: event.delivery_channel || 'in_app',
-      delivery_status: event.delivery_status || 'delivered',
+    const meta = {
+      ...(event.metadata || {}),
+      title: event.title || event.event_type,
       read: false,
       cta_label: event.cta_label || null,
       cta_route: event.cta_route || null,
-      metadata: event.metadata || {},
-      created_at: new Date().toISOString(),
     };
 
-    setNotifications((prev) => [notification, ...prev]);
+    const row = {
+      wallet_address: wallet,
+      channel: event.delivery_channel || 'in_app',
+      event_type: event.event_type,
+      status: 'delivered',
+      message: event.message || '',
+      metadata: meta,
+    };
 
-    if (supabaseAvailable.current && SUPABASE_URL && SUPABASE_ANON_KEY) {
-      try {
-        await fetch(`${SUPABASE_URL}/rest/v1/notification_events`, {
-          method: 'POST',
-          headers: {
-            apikey: SUPABASE_ANON_KEY,
-            Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
-            'Content-Type': 'application/json',
-            Prefer: 'return=minimal',
-          },
-          body: JSON.stringify(notification),
-        });
-      } catch { /* ignore */ }
-    } else {
-      storeNotification(wallet, notification);
+    // Optimistic UI update
+    const tempId = crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}`;
+    const optimistic = dbRowToNotification({ ...row, id: tempId, created_at: new Date().toISOString() });
+    setNotifications((prev) => [optimistic, ...prev]);
+
+    try {
+      const { data, error } = await supabase
+        .from('notification_events')
+        .insert(row)
+        .select()
+        .single();
+      if (error) throw error;
+      // Replace optimistic entry with real DB row
+      if (data) {
+        setNotifications((prev) =>
+          prev.map((n) => n.id === tempId ? dbRowToNotification(data) : n)
+        );
+      }
+      return data ? dbRowToNotification(data) : optimistic;
+    } catch (err) {
+      console.warn('[addNotification] insert error:', err.message);
+      return optimistic;
     }
-
-    return notification;
   }, [wallet]);
 
   const unreadCount = notifications.filter((n) => !n.read).length;

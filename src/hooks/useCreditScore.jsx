@@ -1,5 +1,13 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import { QUICKNODE_RPC, PROXY_API } from '../config';
+import {
+  upsertWalletProfile,
+  insertWalletScan,
+  insertEligibilityCheck,
+  getRepaymentStats,
+  getLatestScan,
+  insertScoreChangeEvent,
+} from '../lib/db';
 
 async function rpcCall(method, params = []) {
   const response = await fetch(QUICKNODE_RPC, {
@@ -45,11 +53,27 @@ export const SCORE_FACTORS = {
 };
 
 export function getTier(score) {
-  if (score >= 850) return { label: 'Elite', color: '#EC81FF' };
-  if (score >= 700) return { label: 'Excellent', color: '#EC81FF' };
-  if (score >= 550) return { label: 'Good', color: '#81D4FF' };
-  if (score >= 400) return { label: 'Fair', color: '#FFD881' };
-  return { label: 'Building', color: '#FF8181' };
+  if (score >= 725) return { label: 'Diamond', color: '#EC81FF' };
+  if (score >= 650) return { label: 'Platinum', color: '#C0C0E0' };
+  if (score >= 575) return { label: 'Gold', color: '#FFD881' };
+  if (score >= 500) return { label: 'Silver', color: '#81D4FF' };
+  if (score >= 430) return { label: 'Bronze', color: '#CD7F32' };
+  return { label: 'Starter', color: '#FF8181' };
+}
+
+// Fixed loan fee schedule: FEE_SCHEDULE[level][termDays] = fee percentage
+export const FEE_SCHEDULE = {
+  1: { 7: 9, 14: 15, 30: 25 },   // Starter
+  2: { 7: 8, 14: 14, 30: 23 },   // Bronze
+  3: { 7: 7, 14: 12, 30: 20 },   // Silver
+  4: { 7: 6, 14: 10, 30: 17 },   // Gold
+  5: { 7: 5, 14: 8, 30: 14 },    // Platinum
+  6: { 7: 4, 14: 6, 30: 10 },    // Diamond
+};
+
+export function getLoanFee(level, termDays) {
+  const schedule = FEE_SCHEDULE[level] || FEE_SCHEDULE[1];
+  return schedule[termDays] || schedule[14];
 }
 
 export const LOAN_LEVELS = [
@@ -117,6 +141,7 @@ export function useCreditScore() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [scoreData, setScoreData] = useState(null);
+  const previousScanRef = useRef(null);
 
   const computeScore = useCallback(async (publicKeyStr) => {
     setLoading(true);
@@ -124,6 +149,11 @@ export function useCreditScore() {
     setScoreData(null);
 
     try {
+      // Fetch repayment stats and previous scan from DB (non-blocking)
+      let repStats = null;
+      try { repStats = await getRepaymentStats(publicKeyStr); } catch { /* non-critical */ }
+      try { previousScanRef.current = await getLatestScan(publicKeyStr); } catch { /* non-critical */ }
+
       const solPrice = await getSolPrice();
 
       const balanceResult = await rpcCall('getBalance', [publicKeyStr, { commitment: 'confirmed' }]);
@@ -144,11 +174,13 @@ export function useCreditScore() {
       };
 
       if (txCount === 0) {
-        setScoreData({
+        const result = {
           score: BASE_SCORE, tier: getTier(BASE_SCORE), loanLevel: getLoanLevel(BASE_SCORE, 0),
           walletAgeDays: 0, txCount: 0, monthlyActivity: 0, protocolCount: 0,
           balanceUsd, spend90d: 0, canBorrow: false, cleanRepayments: 0, breakdown: emptyBreakdown,
-        });
+        };
+        setScoreData(result);
+        persistScan(publicKeyStr, result, repStats, previousScanRef.current);
         setLoading(false);
         return;
       }
@@ -198,14 +230,23 @@ export function useCreditScore() {
       const diversityScore = Math.min(70, Math.floor((protocolCount / 15) * 70));
       const portfolioScore = Math.min(40, Math.floor((balanceUsd / 5000) * 40));
 
-      // Trust signals — defaults; boosted by external hooks
-      const repaymentScore = 0;
+      // Trust signals from DB repayment stats
+      const cleanRepayments = repStats?.clean_repayments || 0;
+      const earlyRepayments = repStats?.early_repayments || 0;
+      const lateRepayments = repStats?.late_repayments || 0;
+      const hasDefault = (repStats?.defaults || 0) > 0;
+      const currentLevel = repStats?.current_level || 0;
+      const qualifyingReps = repStats?.qualifying_higher_borrow_repayments || 0;
+
+      const repaymentScore = calculateRepaymentScore(cleanRepayments, earlyRepayments, lateRepayments, hasDefault);
+      const creditMaturityScore = calculateCreditMaturityBonus(currentLevel);
+      const borrowGrowthScore = calculateBorrowGrowthBonus(qualifyingReps);
+
+      // These remain 0 until boosted by external hooks (X verification, cross-chain, etc.)
       const xVerificationScore = 0;
       const crossChainScore = 0;
       const solIdentityScore = 0;
       const superteamScore = 0;
-      const creditMaturityScore = 0;
-      const borrowGrowthScore = 0;
 
       const totalScore = Math.min(MAX_SCORE, BASE_SCORE +
         ageScore + volumeScore + consistencyScore + diversityScore + portfolioScore +
@@ -213,11 +254,10 @@ export function useCreditScore() {
         creditMaturityScore + borrowGrowthScore
       );
 
-      const cleanRepayments = 0;
       const loanLevel = getLoanLevel(totalScore, cleanRepayments);
       const canBorrow = totalScore >= 350 && meetsSpendGate(loanLevel, estimatedSpend90d);
 
-      setScoreData({
+      const result = {
         score: totalScore, tier: getTier(totalScore),
         loanLevel,
         walletAgeDays, txCount, monthlyActivity, protocolCount,
@@ -229,7 +269,11 @@ export function useCreditScore() {
           crossChain: crossChainScore, solIdentity: solIdentityScore, superteam: superteamScore,
           creditMaturity: creditMaturityScore, borrowGrowth: borrowGrowthScore,
         },
-      });
+      };
+
+      setScoreData(result);
+      // Persist to Supabase (fire-and-forget)
+      persistScan(publicKeyStr, result, repStats, previousScanRef.current);
     } catch (err) {
       console.error('Credit score computation error:', err);
       setError(err.message || 'Failed to compute credit score');
@@ -239,4 +283,82 @@ export function useCreditScore() {
   }, []);
 
   return { loading, error, scoreData, computeScore };
+}
+
+// ─── Persist scan results to Supabase (non-blocking) ────────────
+async function persistScan(wallet, result, repStats, prevScan) {
+  try {
+    const { score, tier, loanLevel, walletAgeDays, txCount, monthlyActivity,
+      protocolCount, balanceUsd, spend90d, canBorrow, breakdown } = result;
+
+    const scanRow = {
+      wallet_address: wallet,
+      score,
+      max_score: MAX_SCORE,
+      tier: tier.label,
+      loan_level: loanLevel.level,
+      level_name: loanLevel.label,
+      eligible: canBorrow,
+      eligibility_status: canBorrow ? 'eligible' : 'not_eligible',
+      base_score: BASE_SCORE,
+      wallet_age_points: breakdown.age,
+      transaction_volume_points: breakdown.volume,
+      monthly_consistency_points: breakdown.consistency,
+      protocol_diversity_points: breakdown.diversity,
+      portfolio_value_points: breakdown.portfolio,
+      repayment_history_points: breakdown.repayment,
+      x_verification_points: breakdown.xVerification,
+      cross_chain_credit_points: breakdown.crossChain,
+      sol_identity_points: breakdown.solIdentity,
+      superteam_pow_points: breakdown.superteam,
+      credit_maturity_points: breakdown.creditMaturity,
+      borrow_growth_points: breakdown.borrowGrowth,
+      wallet_age_days: walletAgeDays,
+      total_transactions: txCount,
+      avg_monthly_transactions: monthlyActivity > 0 ? Math.round(txCount / monthlyActivity) : 0,
+      unique_protocols: protocolCount,
+      recent_spend_90d: Math.round(spend90d * 100) / 100,
+      portfolio_value_usd: Math.round(balanceUsd * 100) / 100,
+    };
+
+    const scan = await insertWalletScan(scanRow);
+
+    // Eligibility check
+    if (scan) {
+      insertEligibilityCheck({
+        wallet_address: wallet,
+        scan_id: scan.id,
+        score_passed: score >= 350,
+        spend_gate_passed: spend90d >= (loanLevel.spendGate || 5),
+        active_loan_gate_passed: true,
+        repayment_requirement_passed: (repStats?.clean_repayments || 0) >= (loanLevel.repayments || 0),
+        level_requirement_passed: true,
+        eligible_level: loanLevel.level,
+        eligible_level_name: loanLevel.label,
+        eligible_amount: loanLevel.amount,
+        borrow_asset: 'USDC',
+      }).catch(() => {});
+    }
+
+    // Upsert wallet profile
+    upsertWalletProfile(wallet).catch(() => {});
+
+    // Track score change if previous scan exists
+    if (prevScan && prevScan.score !== score) {
+      insertScoreChangeEvent({
+        wallet_address: wallet,
+        previous_score: prevScan.score,
+        new_score: score,
+        score_delta: score - prevScan.score,
+        previous_level: prevScan.loan_level,
+        new_level: loanLevel.level,
+        previous_eligible: prevScan.eligible,
+        new_eligible: canBorrow,
+        reason: 'wallet_scan',
+        trigger_event: 'compute_score',
+      }).catch(() => {});
+    }
+  } catch (err) {
+    console.warn('[persistScan] error:', err.message || err);
+  }
 }

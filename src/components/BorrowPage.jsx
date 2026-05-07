@@ -15,14 +15,14 @@ import {
   HelpCircle,
 } from 'lucide-react';
 import { useAppContext } from '../App';
-import { getLoanLevel, calculateBond } from '../hooks/useCreditScore';
+import { getLoanLevel, calculateBond, getLoanFee, FEE_SCHEDULE } from '../hooks/useCreditScore';
 import ScoreRing from './ScoreRing';
 import PoolWaitlistCTA from './PoolWaitlistCTA';
 
 const TERMS = [
-  { days: 7, label: '7 days', apr: 12 },
-  { days: 14, label: '14 days', apr: 10 },
-  { days: 30, label: '30 days', apr: 8 },
+  { days: 7, label: '7 days' },
+  { days: 14, label: '14 days' },
+  { days: 30, label: '30 days' },
 ];
 
 const PURPOSE_CHIPS = [
@@ -67,8 +67,9 @@ export default function BorrowPage() {
   }, [scoreData]);
 
   const parsedAmount = parseFloat(amount) || 0;
-  const interest = parsedAmount * (selectedTerm.apr / 100 / 365) * selectedTerm.days;
-  const totalRepay = parsedAmount + interest;
+  const feePercent = getLoanFee(loanLevel.level || 1, selectedTerm.days);
+  const feeAmount = parsedAmount * (feePercent / 100);
+  const totalRepay = parsedAmount + feeAmount;
   const bondAmount = calculateBond(parsedAmount);
   const bondLamports = Math.ceil((bondAmount / 150) * LAMPORTS_PER_SOL);
   const dueDate = new Date(Date.now() + selectedTerm.days * 86400000);
@@ -144,7 +145,7 @@ export default function BorrowPage() {
       await loan.createLoan({
         wallet: publicKey.toBase58(),
         amount: parsedAmount,
-        apr: selectedTerm.apr,
+        feePercent,
         termDays: selectedTerm.days,
         bondAmount,
         reason: purposeText,
@@ -238,7 +239,7 @@ export default function BorrowPage() {
           <p className="text-sm text-brand-muted mb-4">
             Your credit score of{' '}
             <span className="text-white font-semibold">{scoreData.score}</span> is below the
-            minimum threshold of 400.
+            minimum threshold of 350.
           </p>
           <p className="text-xs text-brand-muted mb-6">
             Increase your on-chain activity to improve your score.
@@ -324,7 +325,7 @@ export default function BorrowPage() {
                   <button key={term.days} onClick={() => setSelectedTerm(term)}
                     className={`p-4 rounded-xl border text-center transition-all ${selectedTerm.days === term.days ? 'border-brand-accent/40 bg-brand-accent/10 shadow-lg shadow-brand-accent/5' : 'border-brand-border bg-brand-bg/30 hover:border-brand-accent/20'}`}>
                     <p className={`text-lg font-bold ${selectedTerm.days === term.days ? 'text-white' : 'text-brand-muted'}`}>{term.label}</p>
-                    <p className="text-xs text-brand-muted mt-1">{term.apr}% APR</p>
+                    <p className="text-xs text-brand-muted mt-1">{getLoanFee(loanLevel.level || 1, term.days)}% fee</p>
                   </button>
                 ))}
               </div>
@@ -361,12 +362,12 @@ export default function BorrowPage() {
                   <div className="flex justify-between text-sm"><span className="text-brand-muted">Loan Source</span><span className="text-white font-semibold">Lendra Credit Pool</span></div>
                   <div className="flex justify-between text-sm"><span className="text-brand-muted">Borrow Asset</span><span className="text-white font-semibold">{borrowAsset.symbol}</span></div>
                   <div className="flex justify-between text-sm"><span className="text-brand-muted">Loan Amount</span><span className="text-white font-semibold">${parsedAmount.toFixed(2)}</span></div>
-                  <div className="flex justify-between text-sm"><span className="text-brand-muted">APR</span><span className="text-white font-semibold">{selectedTerm.apr}%</span></div>
-                  <div className="flex justify-between text-sm"><span className="text-brand-muted">Interest</span><span className="text-white font-semibold">${interest.toFixed(4)}</span></div>
+                  <div className="flex justify-between text-sm"><span className="text-brand-muted">Loan Fee</span><span className="text-white font-semibold">{feePercent}%</span></div>
+                  <div className="flex justify-between text-sm"><span className="text-brand-muted">Fee Amount</span><span className="text-white font-semibold">${feeAmount.toFixed(2)}</span></div>
                   <div className="flex justify-between text-sm"><span className="text-brand-muted">Term</span><span className="text-white font-semibold">{selectedTerm.days} days</span></div>
                   <div className="flex justify-between text-sm"><span className="text-brand-muted">Due Date</span><span className="text-white font-semibold">{dueDate.toLocaleDateString()}</span></div>
                   <div className="h-px bg-brand-border" />
-                  <div className="flex justify-between text-sm"><span className="text-brand-muted">Total Repayment</span><span className="text-brand-accent font-bold">${totalRepay.toFixed(4)}</span></div>
+                  <div className="flex justify-between text-sm"><span className="text-brand-muted">Total Repayment</span><span className="text-brand-accent font-bold">${totalRepay.toFixed(2)}</span></div>
                   <div className="flex justify-between text-sm">
                     <span className="text-brand-muted flex items-center gap-1">Bond Required (30%)<button onClick={() => setBondTooltip(!bondTooltip)} className="text-brand-muted hover:text-brand-accent transition-colors"><HelpCircle className="w-3 h-3" /></button></span>
                     <span className="text-yellow-400 font-semibold">${bondAmount.toFixed(2)} {borrowAsset.symbol}</span>
@@ -384,7 +385,7 @@ export default function BorrowPage() {
             {/* Consent */}
             <label className="flex items-start gap-3 mb-4 cursor-pointer">
               <input type="checkbox" checked={consent} onChange={(e) => setConsent(e.target.checked)} className="mt-0.5 w-4 h-4 rounded border-brand-border bg-brand-bg text-brand-accent focus:ring-brand-accent/40" />
-              <span className="text-xs text-brand-muted leading-relaxed">I understand this loan is from the Lendra Credit Pool (beta). I agree to repay the full amount plus interest by the due date. My 30% bond will be held in escrow and returned upon timely repayment.</span>
+              <span className="text-xs text-brand-muted leading-relaxed">I understand this loan is from the Lendra Credit Pool (beta). I agree to repay the full amount plus the loan fee by the due date. My 30% bond will be held in escrow and returned upon timely repayment.</span>
             </label>
 
             <div className="bg-yellow-500/5 border border-yellow-500/15 rounded-xl p-3 mb-6">
@@ -404,9 +405,9 @@ export default function BorrowPage() {
               <div className="space-y-4 mb-6">
                 <div className="flex justify-between p-3 rounded-xl bg-brand-bg/50"><span className="text-sm text-brand-muted">Loan Source</span><span className="text-sm font-bold text-white">Lendra Credit Pool</span></div>
                 <div className="flex justify-between p-3 rounded-xl bg-brand-bg/50"><span className="text-sm text-brand-muted">Borrow</span><span className="text-sm font-bold text-white">${parsedAmount.toFixed(2)} {borrowAsset.symbol}</span></div>
-                <div className="flex justify-between p-3 rounded-xl bg-brand-bg/50"><span className="text-sm text-brand-muted">APR</span><span className="text-sm font-bold text-white">{selectedTerm.apr}%</span></div>
+                <div className="flex justify-between p-3 rounded-xl bg-brand-bg/50"><span className="text-sm text-brand-muted">Loan Fee</span><span className="text-sm font-bold text-white">{feePercent}%</span></div>
                 <div className="flex justify-between p-3 rounded-xl bg-brand-bg/50"><span className="text-sm text-brand-muted">Term</span><span className="text-sm font-bold text-white">{selectedTerm.days} days</span></div>
-                <div className="flex justify-between p-3 rounded-xl bg-brand-bg/50"><span className="text-sm text-brand-muted">Total Repay</span><span className="text-sm font-bold text-brand-accent">${totalRepay.toFixed(4)}</span></div>
+                <div className="flex justify-between p-3 rounded-xl bg-brand-bg/50"><span className="text-sm text-brand-muted">Total Repay</span><span className="text-sm font-bold text-brand-accent">${totalRepay.toFixed(2)}</span></div>
                 <div className="flex justify-between p-3 rounded-xl bg-yellow-500/5 border border-yellow-500/20"><span className="text-sm text-yellow-400">Bond (30% escrow)</span><span className="text-sm font-bold text-yellow-400">${bondAmount.toFixed(2)} {borrowAsset.symbol}</span></div>
                 <div className="flex justify-between p-3 rounded-xl bg-brand-bg/50"><span className="text-sm text-brand-muted">Purpose</span><span className="text-sm text-white text-right max-w-[200px] truncate">{purposeText}</span></div>
               </div>
@@ -437,7 +438,7 @@ export default function BorrowPage() {
               </motion.div>
               <h2 className="text-xl font-bold text-white mb-2">Your Lendra loan has been created.</h2>
               <p className="text-sm text-brand-muted mb-4">You borrowed <span className="text-white font-semibold">${parsedAmount.toFixed(2)} {borrowAsset.symbol}</span> for {selectedTerm.days} days.</p>
-              <p className="text-xs text-brand-muted mb-6">Repay <span className="text-brand-accent font-semibold">${totalRepay.toFixed(4)}</span> before {dueDate.toLocaleDateString()} to get your bond back and earn +15 score points.</p>
+              <p className="text-xs text-brand-muted mb-6">Repay <span className="text-brand-accent font-semibold">${totalRepay.toFixed(2)}</span> before {dueDate.toLocaleDateString()} to get your bond back and earn +15 score points.</p>
               {txSignature && <a href={`https://solscan.io/tx/${txSignature}`} target="_blank" rel="noopener noreferrer" className="text-xs text-brand-accent underline hover:opacity-80 block mb-6">View transaction on Solscan</a>}
               <div className="flex gap-3">
                 <Link to="/repay" className="flex-1 py-3 rounded-xl bg-brand-accent text-[#0A0A0F] font-semibold text-sm text-center hover:opacity-90 transition-opacity">Go to Repay</Link>

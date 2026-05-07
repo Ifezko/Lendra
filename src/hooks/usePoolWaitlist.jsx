@@ -1,33 +1,7 @@
 import { useState, useCallback, useEffect } from 'react';
 import { useWallet } from '@solana/wallet-adapter-react';
-
-const STORAGE_KEY = 'lendra_pool_waitlist';
-
-function getStoredWaitlist() {
-  try {
-    return JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
-  } catch { return {}; }
-}
-
-function storeWaitlistEntry(wallet, entry) {
-  try {
-    const all = getStoredWaitlist();
-    all[wallet] = { ...entry, updated_at: new Date().toISOString() };
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(all));
-  } catch (e) {
-    console.error('Failed to store waitlist entry:', e);
-  }
-}
-
-function getWaitlistEntry(wallet) {
-  const all = getStoredWaitlist();
-  return all[wallet] || null;
-}
-
-function getAllWaitlistEntries() {
-  const all = getStoredWaitlist();
-  return Object.values(all).sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
-}
+import { insertLoanEvent } from '../lib/db';
+import { supabase } from '../lib/supabase';
 
 export function usePoolWaitlist() {
   const { publicKey } = useWallet();
@@ -41,51 +15,76 @@ export function usePoolWaitlist() {
       setLoading(false);
       return;
     }
-    const existing = getWaitlistEntry(wallet);
-    setEntry(existing);
-    setLoading(false);
+    // Fetch existing waitlist entry from DB
+    (async () => {
+      try {
+        const { data } = await supabase
+          .from('loan_events')
+          .select('*')
+          .eq('wallet_address', wallet)
+          .eq('event_type', 'waitlist_join')
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        setEntry(data || null);
+      } catch {
+        setEntry(null);
+      } finally {
+        setLoading(false);
+      }
+    })();
   }, [wallet]);
 
-  const joinWaitlist = useCallback((data) => {
+  const joinWaitlist = useCallback(async (data) => {
     if (!wallet) return null;
 
-    const newEntry = {
-      id: crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+    const eventRow = {
       wallet_address: wallet,
-      simulated_loan_amount: data.amount || 0,
+      event_type: 'waitlist_join',
       borrow_asset: data.borrowAsset || 'USDC',
+      loan_amount: data.amount || 0,
       bond_amount: data.bondAmount || 0,
       bond_percentage: 30,
       loan_level: data.loanLevel || 0,
       level_name: data.levelName || '',
       loan_purpose_text: data.purposeText || '',
       loan_purpose_tags: data.purposeTags || [],
-      score: data.score || 0,
-      max_score: 1000,
-      eligible: data.eligible || false,
-      telegram_connected: data.telegramConnected || false,
-      x_connected: data.xConnected || false,
-      x_username: data.xUsername || '',
-      notification_channel: 'telegram_x',
-      wants_telegram: data.wantsTelegram || false,
-      wants_x_updates: true,
-      followed_lendra_x: false,
       status: 'waiting',
-      created_at: new Date().toISOString(),
-      notified_at: null,
     };
 
-    storeWaitlistEntry(wallet, newEntry);
-    setEntry(newEntry);
-    return newEntry;
+    const result = await insertLoanEvent(eventRow);
+    if (result) setEntry(result);
+    return result;
   }, [wallet]);
 
-  const updateEntry = useCallback((updates) => {
+  const updateEntry = useCallback(async (updates) => {
     if (!wallet || !entry) return;
-    const updated = { ...entry, ...updates };
-    storeWaitlistEntry(wallet, updated);
-    setEntry(updated);
+    try {
+      const { data } = await supabase
+        .from('loan_events')
+        .update(updates)
+        .eq('id', entry.id)
+        .select()
+        .single();
+      if (data) setEntry(data);
+    } catch (err) {
+      console.warn('[updateEntry] error:', err.message);
+    }
   }, [wallet, entry]);
+
+  const getAllEntries = useCallback(async () => {
+    try {
+      const { data } = await supabase
+        .from('loan_events')
+        .select('*')
+        .eq('event_type', 'waitlist_join')
+        .order('created_at', { ascending: false })
+        .limit(200);
+      return data || [];
+    } catch {
+      return [];
+    }
+  }, []);
 
   const isOnWaitlist = !!entry;
 
@@ -95,6 +94,6 @@ export function usePoolWaitlist() {
     isOnWaitlist,
     joinWaitlist,
     updateEntry,
-    getAllEntries: getAllWaitlistEntries,
+    getAllEntries,
   };
 }

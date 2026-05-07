@@ -1,6 +1,7 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { useConnection, useWallet } from '@solana/wallet-adapter-react';
 import { Transaction, SystemProgram, PublicKey } from '@solana/web3.js';
+import { insertPartnerEvent, getPartnerEvents, upsertWalletProfile } from '../lib/db';
 
 // Ika dWallet cross-chain identity integration (pre-alpha, devnet)
 // In production, this would use the Ika SDK to create dWallet keys via 2PC-MPC DKG,
@@ -29,23 +30,40 @@ function analyzeExternalWallet(address, chain) {
 }
 
 export function useIkaCrossChain() {
-  const [connectedChains, setConnectedChains] = useState(() => {
-    try {
-      const stored = localStorage.getItem('lendra-ika-chains');
-      return stored ? JSON.parse(stored) : [];
-    } catch {
-      return [];
-    }
-  });
-  const [bindingTx, setBindingTx] = useState(() => {
-    try { return localStorage.getItem('lendra-ika-tx') || null; } catch { return null; }
-  });
+  const [connectedChains, setConnectedChains] = useState([]);
+  const [bindingTx, setBindingTx] = useState(null);
   const [isBinding, setIsBinding] = useState(false);
   const [bindError, setBindError] = useState(null);
   const { connection } = useConnection();
   const { publicKey, signTransaction } = useWallet();
 
-  const totalCrossChainBoost = connectedChains.reduce((sum, c) => sum + c.totalBoost, 0);
+  // Load connected chains from DB on wallet connect
+  useEffect(() => {
+    if (!publicKey) return;
+    const wallet = publicKey.toBase58();
+    (async () => {
+      try {
+        const events = await getPartnerEvents(wallet, 'ika');
+        const bindings = events
+          .filter((e) => e.event_type === 'cross_chain_bind')
+          .map((e) => e.metadata)
+          .filter(Boolean);
+        if (bindings.length > 0) {
+          setConnectedChains(bindings);
+          const lastTx = events[0]?.metadata?.txSignature || null;
+          if (lastTx) setBindingTx(lastTx);
+        }
+      } catch {
+        // Fall back to localStorage
+        try {
+          const stored = localStorage.getItem('lendra-ika-chains');
+          if (stored) setConnectedChains(JSON.parse(stored));
+        } catch { /* ignore */ }
+      }
+    })();
+  }, [publicKey]);
+
+  const totalCrossChainBoost = connectedChains.reduce((sum, c) => sum + (c.totalBoost || 0), 0);
 
   const confirmWithPolling = useCallback(async (sig, timeout = 60000) => {
     const start = Date.now();
@@ -114,6 +132,21 @@ export function useIkaCrossChain() {
       localStorage.setItem('lendra-ika-chains', JSON.stringify(updated));
       localStorage.setItem('lendra-ika-tx', sig);
 
+      // Persist to partner_events
+      const wallet = publicKey.toBase58();
+      insertPartnerEvent({
+        wallet_address: wallet,
+        partner: 'ika',
+        event_type: 'cross_chain_bind',
+        metadata: { ...analysis, txSignature: sig },
+      }).catch(() => {});
+
+      // Update wallet profile with cross-chain boost
+      upsertWalletProfile(wallet, {
+        ika_connected: true,
+        ika_chains_count: updated.length,
+      }).catch(() => {});
+
       return { ...analysis, txSignature: sig };
     } catch (err) {
       console.error('Ika cross-chain binding failed:', err);
@@ -130,7 +163,17 @@ export function useIkaCrossChain() {
     );
     setConnectedChains(updated);
     localStorage.setItem('lendra-ika-chains', JSON.stringify(updated));
-  }, [connectedChains]);
+
+    if (publicKey) {
+      const wallet = publicKey.toBase58();
+      insertPartnerEvent({
+        wallet_address: wallet,
+        partner: 'ika',
+        event_type: 'cross_chain_unbind',
+        metadata: { address, chain },
+      }).catch(() => {});
+    }
+  }, [connectedChains, publicKey]);
 
   return {
     connectedChains,

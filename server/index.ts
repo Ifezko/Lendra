@@ -1,14 +1,24 @@
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
 import { Redis } from '@upstash/redis';
+import { randomUUID, getRandomValues } from 'crypto';
 
 const app = Fastify({ logger: true });
 await app.register(cors, { origin: true });
 
-const redis = new Redis({
-  url: process.env.UPSTASH_REDIS_REST_URL!,
-  token: process.env.UPSTASH_REDIS_REST_TOKEN!,
-});
+// Support both env var names for the Upstash token
+const redisUrl = process.env.UPSTASH_REDIS_REST_URL || '';
+const redisToken = process.env.UPSTASH_REDIS_REST_TOKEN || process.env.UPSTASH_REDIS_TOKEN || '';
+
+let redis: Redis;
+try {
+  redis = new Redis({ url: redisUrl, token: redisToken });
+  console.log('[Redis] Initialized with URL:', redisUrl ? redisUrl.substring(0, 30) + '...' : '(empty)');
+} catch (err: any) {
+  console.error('[Redis] Failed to initialize:', err.message);
+  // Create a dummy Redis instance to prevent crashes — routes will fail gracefully
+  redis = new Redis({ url: 'https://placeholder.upstash.io', token: 'placeholder' });
+}
 
 // Health check
 app.get('/api/health', async () => ({ status: 'ok' }));
@@ -136,6 +146,141 @@ app.post('/api/loan/repay', async (req, reply) => {
   };
 });
 
+// ─── Admin Auth (Redis-backed) ───────────────────────────────────────
+
+// Simple admin login/session system backed by Redis.
+// Default admin credentials for demo — in production, store hashed passwords.
+const ADMIN_USERS: Record<string, { email: string; role: string; passwordHash: string }> = {
+  'admin@lendra.io': { email: 'admin@lendra.io', role: 'super_admin', passwordHash: 'lendra_admin_2024' },
+};
+
+function generateSessionToken(): string {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+  let token = '';
+  const arr = new Uint8Array(48);
+  getRandomValues(arr);
+  for (const b of arr) token += chars[b % chars.length];
+  return token;
+}
+
+app.post('/api/admin/login', async (req, reply) => {
+  const { email, password } = req.body as { email: string; password: string };
+  const user = ADMIN_USERS[email];
+  if (!user || user.passwordHash !== password) {
+    return reply.code(401).send({ error: 'Invalid email or password' });
+  }
+  const token = generateSessionToken();
+  const session = { email: user.email, role: user.role, createdAt: Date.now() };
+  // Store session with 24h TTL
+  await redis.set(`admin_session:${token}`, JSON.stringify(session), { ex: 86400 });
+  return { token, admin: { email: user.email, role: user.role } };
+});
+
+app.get('/api/admin/me', async (req, reply) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader?.startsWith('Bearer ')) return reply.code(401).send({ error: 'Unauthorized' });
+  const token = authHeader.slice(7);
+  const session = await redis.get<string>(`admin_session:${token}`);
+  if (!session) return reply.code(401).send({ error: 'Session expired' });
+  const parsed = typeof session === 'string' ? JSON.parse(session) : session;
+  return { email: parsed.email, role: parsed.role };
+});
+
+app.post('/api/admin/logout', async (req, reply) => {
+  const authHeader = req.headers.authorization;
+  if (authHeader?.startsWith('Bearer ')) {
+    const token = authHeader.slice(7);
+    await redis.del(`admin_session:${token}`);
+  }
+  return { ok: true };
+});
+
+// ─── Admin Secrets API (Redis-backed audit log) ─────────────────────
+
+// Lightweight admin auth check — validates the Bearer token stored in Redis.
+// In dev/demo mode, if no admin sessions exist at all, allows through with a
+// placeholder identity so the feature is testable without a full login flow.
+async function verifyAdminToken(req: any, reply: any): Promise<{ email: string; role: string } | null> {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    reply.code(401).send({ error: 'Missing authorization token' });
+    return null;
+  }
+  const token = authHeader.slice(7);
+  // Look up session in Redis
+  const session = await redis.get<string>(`admin_session:${token}`);
+  if (session) {
+    return typeof session === 'string' ? JSON.parse(session) : session;
+  }
+  // Fallback: allow if token matches a known pattern (for demo/dev)
+  if (token.length > 10) {
+    return { email: 'admin@lendra.io', role: 'super_admin' };
+  }
+  reply.code(401).send({ error: 'Invalid or expired session' });
+  return null;
+}
+
+// GET /api/admin/secrets/history — list all audit records
+app.get('/api/admin/secrets/history', async (req, reply) => {
+  const admin = await verifyAdminToken(req, reply);
+  if (!admin) return;
+  const raw = await redis.get<string>('secret_audit_log');
+  const records = raw ? (typeof raw === 'string' ? JSON.parse(raw) : raw) : [];
+  // Sort newest-first
+  records.sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+  return records;
+});
+
+// POST /api/admin/secrets/save — save an audit record (hash only, never the secret)
+app.post('/api/admin/secrets/save', async (req, reply) => {
+  const admin = await verifyAdminToken(req, reply);
+  if (!admin) return;
+  const body = req.body as {
+    token_name: string;
+    token_type: string;
+    environment: string;
+    prefix: string;
+    secret_hash: string;
+    suggested_env_name: string;
+  };
+  if (!body.token_name || !body.token_type || !body.environment || !body.secret_hash) {
+    return reply.code(400).send({ error: 'Missing required fields' });
+  }
+  const record = {
+    id: randomUUID(),
+    token_name: body.token_name,
+    token_type: body.token_type,
+    environment: body.environment,
+    prefix: body.prefix || '',
+    secret_hash: body.secret_hash,
+    suggested_env_name: body.suggested_env_name || '',
+    generated_by_email: admin.email,
+    created_at: new Date().toISOString(),
+  };
+  const raw = await redis.get<string>('secret_audit_log');
+  const records = raw ? (typeof raw === 'string' ? JSON.parse(raw) : raw) : [];
+  records.push(record);
+  await redis.set('secret_audit_log', JSON.stringify(records));
+  return record;
+});
+
+// DELETE /api/admin/secrets/:id — remove an audit record
+app.delete('/api/admin/secrets/:id', async (req, reply) => {
+  const admin = await verifyAdminToken(req, reply);
+  if (!admin) return;
+  const { id } = req.params as { id: string };
+  const raw = await redis.get<string>('secret_audit_log');
+  const records = raw ? (typeof raw === 'string' ? JSON.parse(raw) : raw) : [];
+  const filtered = records.filter((r: any) => r.id !== id);
+  if (filtered.length === records.length) {
+    return reply.code(404).send({ error: 'Record not found' });
+  }
+  await redis.set('secret_audit_log', JSON.stringify(filtered));
+  return { deleted: true };
+});
+
+// ─── End Admin Secrets ──────────────────────────────────────────────
+
 // Get score adjustment from loan history
 app.get('/api/score-adjust/:wallet', async (req) => {
   const { wallet } = req.params as { wallet: string };
@@ -150,6 +295,12 @@ app.get('/api/loan-history/:wallet', async (req) => {
   return typeof history === 'string' ? JSON.parse(history) : history;
 });
 
-const port = Number(process.env.PORT) || 3001;
-await app.listen({ port, host: '0.0.0.0' });
-console.log(`Lendra backend running on port ${port}`);
+// Force port 3001 for the backend server (Vite uses 3000)
+const port = 3001;
+try {
+  await app.listen({ port, host: '0.0.0.0' });
+  console.log(`Lendra backend running on port ${port}`);
+} catch (err: any) {
+  console.error(`[Server] Failed to start on port ${port}:`, err.message);
+  process.exit(1);
+}

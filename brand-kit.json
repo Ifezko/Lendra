@@ -1,27 +1,51 @@
 {
   "brandKit": {
-    "id": "5733a3da-6ee0-403e-95f7-945130810f44",
-    "name": "Brand Kit - 04/05/2026",
+    "id": "48bdf059-e1e4-4b33-bd6b-abc5637cefa8",
+    "name": "Brand Kit - 06/05/2026",
     "colors": [],
     "assets": [
       {
-        "id": "e7a90915-1f55-4408-a363-bcb83b4eccac",
-        "fileName": "update-the-existing-lendra-app.md",
-        "assetType": "document",
-        "mimeType": "application/octet-stream",
+        "id": "59f2aa20-b82a-4696-a4e9-d6fd85e28b3c",
+        "fileName": "chrome-huhdkhhjju.png",
+        "assetType": "image",
+        "mimeType": "image/png",
         "metadata": {
-          "kind": "document",
+          "kind": "image",
+          "aspectRatio": "vertical",
           "variants": [
             {
-              "width": 0,
-              "height": 0,
+              "width": 331,
+              "height": 470,
               "purpose": "original",
-              "fileName": "update-the-existing-lendra-app.md",
-              "mimeType": "application/octet-stream",
-              "storageKey": "brand-kits/8f35c7a6-a2c8-4264-a893-526f49fec842/5733a3da-6ee0-403e-95f7-945130810f44/update-the-existing-lendra-app.md",
-              "fileSizeBytes": 25059
+              "fileName": "chrome-huhdkhhjju-original.png",
+              "mimeType": "image/png",
+              "storageKey": "brand-kits/8f35c7a6-a2c8-4264-a893-526f49fec842/48bdf059-e1e4-4b33-bd6b-abc5637cefa8/chrome-huhdkhhjju-original.png",
+              "fileSizeBytes": 7196
             }
-          ]
+          ],
+          "aiAnalysis": {
+            "hasText": true,
+            "description": "A dark-themed database schema sidebar panel showing a list of database table names with grid/table icons on the left and globe/network icons on the right. The background is very dark (near black), with white text listing table names including admin_audit_logs, admin_invites, admin_login_attempts, admin_permission_overr..., admin_sessions, admin_users, app_settings, bond_events, commission_events, credit_pool_state, and eligibility_checks. Each row has a small square grid icon on the left and a circular globe icon on the right.",
+            "textContent": "admin_audit_logs, admin_invites, admin_login_attempts, admin_permission_overr..., admin_sessions, admin_users, app_settings, bond_events, commission_events, credit_pool_state, eligibility_checks",
+            "dominantColors": [
+              "#1a1a1a",
+              "#ffffff",
+              "#2d2d2d"
+            ],
+            "recommendations": {
+              "bestFor": [
+                "content",
+                "background"
+              ],
+              "usageNotes": "This is a screenshot of a database management UI panel, likely from a tool like TablePlus or similar. Best used as documentation reference or visual example in technical documentation, README files, or developer-facing content. Not suitable as a reusable UI asset. If used as a background or reference image, ensure sufficient contrast with overlaid content. The transparent background allows placement on similarly dark surfaces.",
+              "themeVariant": "dark",
+              "notSuitableFor": [
+                "favicon",
+                "hero",
+                "navbar"
+              ]
+            }
+          }
         }
       }
     ]
