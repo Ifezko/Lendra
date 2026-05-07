@@ -1,24 +1,14 @@
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
 import { Redis } from '@upstash/redis';
-import { randomUUID, getRandomValues } from 'crypto';
 
 const app = Fastify({ logger: true });
 await app.register(cors, { origin: true });
 
-// Support both env var names for the Upstash token
-const redisUrl = process.env.UPSTASH_REDIS_REST_URL || '';
-const redisToken = process.env.UPSTASH_REDIS_REST_TOKEN || process.env.UPSTASH_REDIS_TOKEN || '';
-
-let redis: Redis;
-try {
-  redis = new Redis({ url: redisUrl, token: redisToken });
-  console.log('[Redis] Initialized with URL:', redisUrl ? redisUrl.substring(0, 30) + '...' : '(empty)');
-} catch (err: any) {
-  console.error('[Redis] Failed to initialize:', err.message);
-  // Create a dummy Redis instance to prevent crashes — routes will fail gracefully
-  redis = new Redis({ url: 'https://placeholder.upstash.io', token: 'placeholder' });
-}
+const redis = new Redis({
+  url: process.env.UPSTASH_REDIS_REST_URL!,
+  token: process.env.UPSTASH_REDIS_REST_TOKEN!,
+});
 
 // Health check
 app.get('/api/health', async () => ({ status: 'ok' }));
@@ -158,7 +148,7 @@ function generateSessionToken(): string {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
   let token = '';
   const arr = new Uint8Array(48);
-  getRandomValues(arr);
+  crypto.getRandomValues(arr);
   for (const b of arr) token += chars[b % chars.length];
   return token;
 }
@@ -247,7 +237,7 @@ app.post('/api/admin/secrets/save', async (req, reply) => {
     return reply.code(400).send({ error: 'Missing required fields' });
   }
   const record = {
-    id: randomUUID(),
+    id: crypto.randomUUID(),
     token_name: body.token_name,
     token_type: body.token_type,
     environment: body.environment,
@@ -295,12 +285,6 @@ app.get('/api/loan-history/:wallet', async (req) => {
   return typeof history === 'string' ? JSON.parse(history) : history;
 });
 
-// Force port 3001 for the backend server (Vite uses 3000)
-const port = 3001;
-try {
-  await app.listen({ port, host: '0.0.0.0' });
-  console.log(`Lendra backend running on port ${port}`);
-} catch (err: any) {
-  console.error(`[Server] Failed to start on port ${port}:`, err.message);
-  process.exit(1);
-}
+const port = Number(process.env.PORT) || 3001;
+await app.listen({ port, host: '0.0.0.0' });
+console.log(`Lendra backend running on port ${port}`);
