@@ -5,7 +5,7 @@ import { useAdminAuth } from './useAdminAuth';
 import {
   LayoutDashboard, BarChart3, Wallet, ArrowDownToLine, Shield,
   DollarSign, Users, Brain, Bell, CreditCard, BadgeCheck, UserCog,
-  Settings, X, LogOut, Key, Rocket,
+  Settings, X, LogOut, Key, Rocket, Webhook, Database,
 } from 'lucide-react';
 
 const SLUG = '/ops-okw-7qv3';
@@ -44,6 +44,8 @@ const NAV_SECTIONS = [
       { to: '/admins', label: 'Admins', icon: UserCog, roles: ['super_admin'] },
       { to: '/settings', label: 'Settings', icon: Settings, roles: ['super_admin', 'admin'] },
       { to: '/settings/secrets', label: 'Secrets', icon: Key, roles: ['super_admin'] },
+      { to: '/webhooks', label: 'Webhooks', icon: Webhook, roles: ['super_admin'] },
+      { to: '/data-wiring', label: 'Data Wiring', icon: Database, roles: ['super_admin'] },
     ],
   },
 ];

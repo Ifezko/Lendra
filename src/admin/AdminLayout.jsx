@@ -18,6 +18,8 @@ import Admins from './pages/Admins';
 import AdminSettings from './pages/AdminSettings';
 import SecretsGenerator from './pages/SecretsGenerator';
 import PoolWaitlist from './pages/PoolWaitlist';
+import WebhooksStatus from './pages/WebhooksStatus';
+import DataWiring from './pages/DataWiring';
 import { Menu, Loader2 } from 'lucide-react';
 
 function AdminHeader({ onMenuToggle }) {
@@ -85,6 +87,8 @@ export default function AdminLayout() {
               <>
                 <Route path="admins" element={<Admins />} />
                 <Route path="settings/secrets" element={<SecretsGenerator />} />
+                <Route path="webhooks" element={<WebhooksStatus />} />
+                <Route path="data-wiring" element={<DataWiring />} />
               </>
             )}
             <Route path="*" element={<Navigate to="" replace />} />
