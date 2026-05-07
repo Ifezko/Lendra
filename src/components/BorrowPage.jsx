@@ -1,8 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useWallet, useConnection } from '@solana/wallet-adapter-react';
+import { useWallet } from '@solana/wallet-adapter-react';
 import { useNavigate, Link } from 'react-router-dom';
-import { Transaction, SystemProgram, PublicKey, LAMPORTS_PER_SOL } from '@solana/web3.js';
 import {
   ArrowDownToLine,
   Shield,
@@ -39,12 +38,8 @@ const BORROW_ASSETS = [
   { symbol: 'USDT', name: 'Tether', supported: false },
 ];
 
-// Lendra escrow vault
-const BOND_VAULT = new PublicKey('1nc1nerator11111111111111111111111111111111');
-
 export default function BorrowPage() {
-  const { publicKey, connected, signTransaction } = useWallet();
-  const { connection } = useConnection();
+  const { publicKey, connected } = useWallet();
   const navigate = useNavigate();
   const ctx = useAppContext();
   const scoreData = ctx?.scoreData;
@@ -71,7 +66,6 @@ export default function BorrowPage() {
   const feeAmount = parsedAmount * (feePercent / 100);
   const totalRepay = parsedAmount + feeAmount;
   const bondAmount = calculateBond(parsedAmount);
-  const bondLamports = Math.ceil((bondAmount / 150) * LAMPORTS_PER_SOL);
   const dueDate = new Date(Date.now() + selectedTerm.days * 86400000);
 
   const purposeValid = purposeText.trim().length >= 10;
@@ -108,39 +102,15 @@ export default function BorrowPage() {
   };
 
   const handleSign = async () => {
-    if (!publicKey || !signTransaction) return;
+    if (!publicKey) return;
     setStep('signing');
     setTxError('');
 
     try {
-      const tx = new Transaction().add(
-        SystemProgram.transfer({
-          fromPubkey: publicKey,
-          toPubkey: BOND_VAULT,
-          lamports: bondLamports,
-        })
-      );
-
-      const { blockhash } = await connection.getLatestBlockhash('confirmed');
-      tx.recentBlockhash = blockhash;
-      tx.feePayer = publicKey;
-
-      const signed = await signTransaction(tx);
-      const sig = await connection.sendRawTransaction(signed.serialize(), { skipPreflight: false });
-
-      let confirmed = false;
-      for (let i = 0; i < 30; i++) {
-        const status = await connection.getSignatureStatus(sig);
-        if (
-          status?.value?.confirmationStatus === 'confirmed' ||
-          status?.value?.confirmationStatus === 'finalized'
-        ) {
-          confirmed = true;
-          break;
-        }
-        await new Promise((r) => setTimeout(r, 2000));
-      }
-      if (!confirmed) throw new Error('Transaction confirmation timed out');
+      // Beta simulation — record the loan intent without an on-chain bond transfer.
+      // When the Lendra Credit Pool goes live, the real bond escrow transaction
+      // will be enabled here.
+      const simId = `sim_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 
       await loan.createLoan({
         wallet: publicKey.toBase58(),
@@ -153,17 +123,17 @@ export default function BorrowPage() {
         borrowAsset: borrowAsset.symbol,
         level: loanLevel.level,
         score: scoreData.score,
-        txSignature: sig,
+        txSignature: simId,
         loanSource: 'lendra_credit_pool',
         isSimulated: true,
       });
 
-      setTxSignature(sig);
+      setTxSignature(simId);
       setStep('success');
       ctx?.refreshScore();
     } catch (err) {
-      console.error('Borrow transaction failed:', err);
-      setTxError(err.message || 'Transaction failed');
+      console.error('Borrow simulation failed:', err);
+      setTxError(err.message || 'Simulation failed');
       setStep('error');
     }
   };
@@ -385,15 +355,15 @@ export default function BorrowPage() {
             {/* Consent */}
             <label className="flex items-start gap-3 mb-4 cursor-pointer">
               <input type="checkbox" checked={consent} onChange={(e) => setConsent(e.target.checked)} className="mt-0.5 w-4 h-4 rounded border-brand-border bg-brand-bg text-brand-accent focus:ring-brand-accent/40" />
-              <span className="text-xs text-brand-muted leading-relaxed">I understand this loan is from the Lendra Credit Pool (beta). I agree to repay the full amount plus the loan fee by the due date. My 30% bond will be held in escrow and returned upon timely repayment.</span>
+              <span className="text-xs text-brand-muted leading-relaxed">I understand this is a simulated loan from the Lendra Credit Pool (beta). I agree to repay the full amount plus the loan fee by the due date. My 30% bond will be held in escrow and returned upon timely repayment when the pool goes live.</span>
             </label>
 
             <div className="bg-yellow-500/5 border border-yellow-500/15 rounded-xl p-3 mb-6">
-              <p className="text-[10px] text-yellow-400/80 leading-relaxed">Lendra Credit Pool is in beta. Loan disbursement may be simulated during testing.</p>
+              <p className="text-[10px] text-yellow-400/80 leading-relaxed">Lendra Credit Pool is in beta. Loan disbursement is simulated during testing. No on-chain funds will be transferred until the pool launches.</p>
             </div>
 
             <button onClick={handleConfirm} disabled={!canBorrow} className="w-full py-4 rounded-xl bg-brand-accent text-[#0A0A0F] font-bold text-base hover:opacity-90 transition-opacity disabled:opacity-30 disabled:cursor-not-allowed">
-              Review & Borrow
+              Review & Simulate Borrow
             </button>
           </motion.div>
         )}
@@ -401,7 +371,8 @@ export default function BorrowPage() {
         {step === 'confirm' && (
           <motion.div key="confirm" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }} className="max-w-lg mx-auto">
             <div className="bg-brand-card rounded-2xl border border-brand-accent/30 p-8">
-              <h2 className="text-xl font-bold text-white mb-6 text-center">Confirm Your Loan</h2>
+              <h2 className="text-xl font-bold text-white mb-2 text-center">Confirm Your Loan Simulation</h2>
+              <p className="text-xs text-brand-muted text-center mb-6">This is a beta simulation. No on-chain funds will be transferred.</p>
               <div className="space-y-4 mb-6">
                 <div className="flex justify-between p-3 rounded-xl bg-brand-bg/50"><span className="text-sm text-brand-muted">Loan Source</span><span className="text-sm font-bold text-white">Lendra Credit Pool</span></div>
                 <div className="flex justify-between p-3 rounded-xl bg-brand-bg/50"><span className="text-sm text-brand-muted">Borrow</span><span className="text-sm font-bold text-white">${parsedAmount.toFixed(2)} {borrowAsset.symbol}</span></div>
@@ -412,11 +383,11 @@ export default function BorrowPage() {
                 <div className="flex justify-between p-3 rounded-xl bg-brand-bg/50"><span className="text-sm text-brand-muted">Purpose</span><span className="text-sm text-white text-right max-w-[200px] truncate">{purposeText}</span></div>
               </div>
               <div className="bg-brand-bg/50 rounded-xl p-4 mb-6">
-                <p className="text-xs text-brand-muted leading-relaxed">By proceeding, you will sign a transaction depositing ${bondAmount.toFixed(2)} as a bond into escrow. This bond is returned when you repay on time. Late repayment results in a score penalty.</p>
+                <p className="text-xs text-brand-muted leading-relaxed">This simulation records your loan intent. When the Lendra Credit Pool launches, a ${bondAmount.toFixed(2)} bond will be required in escrow. Repay on time to keep your bond and earn score points.</p>
               </div>
               <div className="flex gap-3">
                 <button onClick={() => setStep('form')} className="flex-1 py-3 rounded-xl border border-brand-border text-brand-muted font-semibold text-sm hover:text-white hover:bg-brand-cardHover transition-colors">Back</button>
-                <button onClick={handleSign} className="flex-1 py-3 rounded-xl bg-brand-accent text-[#0A0A0F] font-bold text-sm hover:opacity-90 transition-opacity">Sign & Borrow</button>
+                <button onClick={handleSign} className="flex-1 py-3 rounded-xl bg-brand-accent text-[#0A0A0F] font-bold text-sm hover:opacity-90 transition-opacity">Confirm Simulation</button>
               </div>
             </div>
           </motion.div>
@@ -425,8 +396,8 @@ export default function BorrowPage() {
         {step === 'signing' && (
           <motion.div key="signing" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="max-w-lg mx-auto pt-20 text-center">
             <Loader2 className="w-16 h-16 text-brand-accent animate-spin mx-auto mb-6" />
-            <h2 className="text-xl font-bold text-white mb-2">Processing Your Loan</h2>
-            <p className="text-sm text-brand-muted">Sign the transaction in your wallet and wait for confirmation...</p>
+            <h2 className="text-xl font-bold text-white mb-2">Processing Your Simulation</h2>
+            <p className="text-sm text-brand-muted">Recording your loan intent...</p>
           </motion.div>
         )}
 
@@ -436,12 +407,14 @@ export default function BorrowPage() {
               <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ type: 'spring', damping: 12 }}>
                 <CheckCircle className="w-16 h-16 text-green-400 mx-auto mb-4" />
               </motion.div>
-              <h2 className="text-xl font-bold text-white mb-2">Your Lendra loan has been created.</h2>
-              <p className="text-sm text-brand-muted mb-4">You borrowed <span className="text-white font-semibold">${parsedAmount.toFixed(2)} {borrowAsset.symbol}</span> for {selectedTerm.days} days.</p>
-              <p className="text-xs text-brand-muted mb-6">Repay <span className="text-brand-accent font-semibold">${totalRepay.toFixed(2)}</span> before {dueDate.toLocaleDateString()} to get your bond back and earn +15 score points.</p>
-              {txSignature && <a href={`https://solscan.io/tx/${txSignature}`} target="_blank" rel="noopener noreferrer" className="text-xs text-brand-accent underline hover:opacity-80 block mb-6">View transaction on Solscan</a>}
+              <h2 className="text-xl font-bold text-white mb-2">Loan Simulation Complete</h2>
+              <p className="text-sm text-brand-muted mb-4">You simulated a loan of <span className="text-white font-semibold">${parsedAmount.toFixed(2)} {borrowAsset.symbol}</span> for {selectedTerm.days} days.</p>
+              <p className="text-xs text-brand-muted mb-6">When the pool goes live, repay <span className="text-brand-accent font-semibold">${totalRepay.toFixed(2)}</span> before {dueDate.toLocaleDateString()} to get your bond back and earn +15 score points.</p>
+              <div className="bg-brand-accent/5 border border-brand-accent/20 rounded-xl p-3 mb-6">
+                <p className="text-[10px] text-brand-accent font-medium">This was a simulation. No funds were transferred. Join the pool launch list below to be notified when real borrowing goes live.</p>
+              </div>
               <div className="flex gap-3">
-                <Link to="/repay" className="flex-1 py-3 rounded-xl bg-brand-accent text-[#0A0A0F] font-semibold text-sm text-center hover:opacity-90 transition-opacity">Go to Repay</Link>
+                <Link to="/repay" className="flex-1 py-3 rounded-xl bg-brand-accent text-[#0A0A0F] font-semibold text-sm text-center hover:opacity-90 transition-opacity">View Position</Link>
                 <Link to="/dashboard" className="flex-1 py-3 rounded-xl border border-brand-border text-brand-muted font-semibold text-sm text-center hover:text-white transition-colors">Back to Dashboard</Link>
               </div>
             </div>
@@ -463,7 +436,7 @@ export default function BorrowPage() {
           <motion.div key="error" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="max-w-lg mx-auto pt-12">
             <div className="bg-brand-card rounded-2xl border border-red-500/30 p-8 text-center">
               <AlertTriangle className="w-12 h-12 text-red-400 mx-auto mb-4" />
-              <h2 className="text-xl font-bold text-white mb-2">Transaction Failed</h2>
+              <h2 className="text-xl font-bold text-white mb-2">Simulation Failed</h2>
               <p className="text-sm text-red-400 mb-6">{txError}</p>
               <button onClick={() => setStep('form')} className="px-8 py-3 rounded-xl border border-brand-border text-brand-muted font-semibold text-sm hover:text-white transition-colors">Try Again</button>
             </div>

@@ -104,7 +104,7 @@ function HeroScoreCard() {
           </div>
           <div className="text-right">
             <p className="text-[10px] text-brand-muted uppercase tracking-wider">Loan Level</p>
-            <p className="text-xs font-semibold text-brand-accent">Level 6 — Gold</p>
+            <p className="text-xs font-semibold text-brand-accent">Level 6 — Diamond</p>
           </div>
         </div>
 
@@ -250,7 +250,7 @@ function Footer() {
           </p>
         </div>
         <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
-          <p className="text-[10px] text-brand-muted/60">&copy; 2026 LENDRA DIGITAL INFRASTRUCTURE LTD. All rights reserved.</p>
+          <p className="text-[10px] text-brand-muted/60">&copy; 2026 LENDRA. All rights reserved.</p>
           <div className="flex flex-wrap items-center gap-4">
             {legalLinks.map((link) => (
               <a key={link.label} href={link.href} className="text-[10px] text-brand-muted/60 hover:text-brand-accent transition-colors">{link.label}</a>

@@ -1,48 +1,100 @@
 {
   "brandKit": {
-    "id": "48bdf059-e1e4-4b33-bd6b-abc5637cefa8",
-    "name": "Brand Kit - 06/05/2026",
+    "id": "e2324b41-5014-4e7a-a26c-60243e3bcaa0",
+    "name": "Brand Kit - 07/05/2026",
     "colors": [],
     "assets": [
       {
-        "id": "59f2aa20-b82a-4696-a4e9-d6fd85e28b3c",
-        "fileName": "chrome-huhdkhhjju.png",
-        "assetType": "image",
+        "id": "f5a385ae-9f0f-414c-b86e-b6cb0d510dc8",
+        "fileName": "lender-logo5x.png",
+        "assetType": "logo",
         "mimeType": "image/png",
         "metadata": {
-          "kind": "image",
-          "aspectRatio": "vertical",
+          "kind": "logo",
+          "aspectRatio": "square",
           "variants": [
             {
-              "width": 331,
-              "height": 470,
+              "width": 540,
+              "height": 540,
               "purpose": "original",
-              "fileName": "chrome-huhdkhhjju-original.png",
+              "fileName": "lender-logo5x-original.png",
               "mimeType": "image/png",
-              "storageKey": "brand-kits/8f35c7a6-a2c8-4264-a893-526f49fec842/48bdf059-e1e4-4b33-bd6b-abc5637cefa8/chrome-huhdkhhjju-original.png",
-              "fileSizeBytes": 7196
+              "storageKey": "brand-kits/8f35c7a6-a2c8-4264-a893-526f49fec842/e2324b41-5014-4e7a-a26c-60243e3bcaa0/lender-logo5x-original.png",
+              "fileSizeBytes": 2939
+            },
+            {
+              "width": 16,
+              "height": 16,
+              "purpose": "favicon",
+              "fileName": "favicon-16.png",
+              "mimeType": "image/png",
+              "storageKey": "brand-kits/8f35c7a6-a2c8-4264-a893-526f49fec842/e2324b41-5014-4e7a-a26c-60243e3bcaa0/favicon-16.png",
+              "fileSizeBytes": 599
+            },
+            {
+              "width": 32,
+              "height": 32,
+              "purpose": "favicon",
+              "fileName": "favicon-32.png",
+              "mimeType": "image/png",
+              "storageKey": "brand-kits/8f35c7a6-a2c8-4264-a893-526f49fec842/e2324b41-5014-4e7a-a26c-60243e3bcaa0/favicon-32.png",
+              "fileSizeBytes": 1158
+            },
+            {
+              "width": 64,
+              "height": 64,
+              "purpose": "favicon",
+              "fileName": "favicon-64.png",
+              "mimeType": "image/png",
+              "storageKey": "brand-kits/8f35c7a6-a2c8-4264-a893-526f49fec842/e2324b41-5014-4e7a-a26c-60243e3bcaa0/favicon-64.png",
+              "fileSizeBytes": 2052
+            },
+            {
+              "width": 128,
+              "height": 128,
+              "purpose": "favicon",
+              "fileName": "favicon-128.png",
+              "mimeType": "image/png",
+              "storageKey": "brand-kits/8f35c7a6-a2c8-4264-a893-526f49fec842/e2324b41-5014-4e7a-a26c-60243e3bcaa0/favicon-128.png",
+              "fileSizeBytes": 3724
+            },
+            {
+              "width": 256,
+              "height": 256,
+              "purpose": "favicon",
+              "fileName": "favicon-256.png",
+              "mimeType": "image/png",
+              "storageKey": "brand-kits/8f35c7a6-a2c8-4264-a893-526f49fec842/e2324b41-5014-4e7a-a26c-60243e3bcaa0/favicon-256.png",
+              "fileSizeBytes": 6995
+            },
+            {
+              "width": 32,
+              "height": 32,
+              "purpose": "favicon",
+              "fileName": "favicon.ico",
+              "mimeType": "image/x-icon",
+              "storageKey": "brand-kits/8f35c7a6-a2c8-4264-a893-526f49fec842/e2324b41-5014-4e7a-a26c-60243e3bcaa0/favicon.ico",
+              "fileSizeBytes": 1158
             }
           ],
           "aiAnalysis": {
-            "hasText": true,
-            "description": "A dark-themed database schema sidebar panel showing a list of database table names with grid/table icons on the left and globe/network icons on the right. The background is very dark (near black), with white text listing table names including admin_audit_logs, admin_invites, admin_login_attempts, admin_permission_overr..., admin_sessions, admin_users, app_settings, bond_events, commission_events, credit_pool_state, and eligibility_checks. Each row has a small square grid icon on the left and a circular globe icon on the right.",
-            "textContent": "admin_audit_logs, admin_invites, admin_login_attempts, admin_permission_overr..., admin_sessions, admin_users, app_settings, bond_events, commission_events, credit_pool_state, eligibility_checks",
+            "hasText": false,
+            "description": "A bold, stylized monogram logo featuring the letters 'Li' rendered in black on a vivid pink/magenta (violet-pink) background. The 'L' is designed with a large sweeping curved base and a sharp angular spike at the top, giving it a dynamic, modern feel. The 'i' sits to the right with a rectangular dot above it. The overall style is geometric yet fluid, with a strong graphic identity. The design uses negative space effectively within the square canvas.",
+            "textContent": null,
             "dominantColors": [
-              "#1a1a1a",
-              "#ffffff",
-              "#2d2d2d"
+              "#000000",
+              "#E060E0"
             ],
             "recommendations": {
               "bestFor": [
-                "content",
-                "background"
-              ],
-              "usageNotes": "This is a screenshot of a database management UI panel, likely from a tool like TablePlus or similar. Best used as documentation reference or visual example in technical documentation, README files, or developer-facing content. Not suitable as a reusable UI asset. If used as a background or reference image, ensure sufficient contrast with overlaid content. The transparent background allows placement on similarly dark surfaces.",
-              "themeVariant": "dark",
-              "notSuitableFor": [
                 "favicon",
-                "hero",
-                "navbar"
+                "app-icon",
+                "hero"
+              ],
+              "usageNotes": "This square logo works best as a favicon or app icon due to its compact, symmetric composition. The vibrant pink-magenta background (#E060E0 approx) makes it highly visible on white or light-colored surfaces. Since it has transparency declared, verify the background is properly exported — if the pink is part of the artwork rather than a transparent layer, use it on neutral or white backgrounds to avoid color clashing. Avoid placing it on similarly saturated or pink-toned backgrounds. For navbar use, consider a version with a transparent background showing only the black letterform. Minimum recommended display size is 32×32px for favicon legibility.",
+              "themeVariant": "light",
+              "notSuitableFor": [
+                "background"
               ]
             }
           }
