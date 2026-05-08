@@ -5,10 +5,11 @@ import { Link } from 'react-router-dom';
 import {
   Bell, AlertTriangle, CheckCircle, Info, Clock, ArrowRight,
   TrendingUp, Shield, Zap, RefreshCw, Settings, Check,
-  ChevronDown, BellOff, Send,
+  ChevronDown, BellOff, Send, Loader2, XCircle,
 } from 'lucide-react';
 import { useAppContext } from '../App';
 import { useNotifications } from '../hooks/useNotifications';
+import { useTelegram } from '../hooks/useTelegram';
 
 const EVENT_CONFIG = {
   trust_score_dropped: { icon: TrendingUp, iconColor: 'text-red-400', iconBg: 'bg-red-500/10', borderColor: 'border-red-500/20' },
@@ -109,7 +110,156 @@ function NotificationCard({ notification, onMarkRead, delay = 0 }) {
   );
 }
 
-function SettingsPanel({ prefs, savePrefs, telegram }) {
+function TelegramCard({ tg }) {
+  const [showLinkHelp, setShowLinkHelp] = useState(false);
+
+  const handleEnable = async () => {
+    const result = await tg.startLink();
+    if (result?.telegramUrl) {
+      setShowLinkHelp(true);
+      // Start polling for connection
+      tg.pollConnection();
+    }
+  };
+
+  if (tg.loading) {
+    return (
+      <div className="bg-brand-card rounded-2xl border border-brand-border p-5 animate-pulse mb-6">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-brand-border" />
+          <div className="flex-1 space-y-2">
+            <div className="h-4 bg-brand-border rounded w-1/3" />
+            <div className="h-3 bg-brand-border rounded w-2/3" />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Connected state
+  if (tg.connected) {
+    return (
+      <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="bg-brand-card rounded-2xl border border-blue-500/30 p-5 mb-6">
+        <div className="flex items-start justify-between mb-4">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-blue-500/10 flex items-center justify-center">
+              <Send className="w-5 h-5 text-blue-400" />
+            </div>
+            <div>
+              <p className="text-sm font-bold text-white">Telegram Alerts</p>
+              <div className="flex items-center gap-1.5 mt-0.5">
+                <CheckCircle className="w-3 h-3 text-green-400" />
+                <span className="text-xs text-green-400 font-medium">Connected</span>
+                {tg.username && <span className="text-xs text-brand-muted ml-1">@{tg.username}</span>}
+              </div>
+            </div>
+          </div>
+          <button
+            onClick={tg.sendTest}
+            disabled={tg.testing}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-500/10 border border-blue-500/20 text-blue-400 text-xs font-semibold hover:bg-blue-500/20 transition-colors disabled:opacity-50"
+          >
+            {tg.testing ? <Loader2 className="w-3 h-3 animate-spin" /> : <Send className="w-3 h-3" />}
+            Send Test Alert
+          </button>
+        </div>
+
+        {tg.testResult === 'success' && (
+          <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-green-500/10 border border-green-500/20 mb-3">
+            <CheckCircle className="w-3.5 h-3.5 text-green-400 flex-shrink-0" />
+            <p className="text-xs text-green-300">Test alert sent. Check your Telegram.</p>
+          </div>
+        )}
+        {tg.testResult === 'error' && (
+          <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-red-500/10 border border-red-500/20 mb-3">
+            <XCircle className="w-3.5 h-3.5 text-red-400 flex-shrink-0" />
+            <p className="text-xs text-red-300">Test alert failed. Check Telegram connection.</p>
+          </div>
+        )}
+
+        {/* Preference toggles */}
+        <div className="space-y-0">
+          <p className="text-xs font-bold text-white uppercase tracking-wider mb-2">Alert Preferences</p>
+          {[
+            { key: 'all', label: 'All Telegram alerts' },
+            { key: 'score', label: 'Score changes' },
+            { key: 'loan', label: 'Loan status updates' },
+            { key: 'bond', label: 'Bond events' },
+            { key: 'repayment', label: 'Repayment reminders' },
+            { key: 'level', label: 'Level unlocks' },
+            { key: 'pool_launch', label: 'Pool launch notifications' },
+          ].map((item) => (
+            <button
+              key={item.key}
+              onClick={() => tg.savePrefs({ ...tg.prefs, [item.key]: !tg.prefs[item.key] })}
+              className="flex items-center justify-between w-full py-2.5 border-b border-brand-border/50 last:border-0"
+            >
+              <span className="text-xs text-brand-muted">{item.label}</span>
+              <div className={`w-8 h-5 rounded-full transition-colors flex items-center ${
+                tg.prefs[item.key] ? 'bg-blue-500 justify-end' : 'bg-brand-border justify-start'
+              }`}>
+                <div className={`w-3.5 h-3.5 rounded-full mx-0.5 transition-colors ${
+                  tg.prefs[item.key] ? 'bg-white' : 'bg-brand-muted'
+                }`} />
+              </div>
+            </button>
+          ))}
+        </div>
+      </motion.div>
+    );
+  }
+
+  // Not connected state
+  return (
+    <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="bg-brand-card rounded-2xl border border-brand-border p-5 mb-6">
+      <div className="flex items-start gap-3 mb-4">
+        <div className="w-10 h-10 rounded-xl bg-blue-500/10 flex items-center justify-center flex-shrink-0">
+          <Send className="w-5 h-5 text-blue-400" />
+        </div>
+        <div>
+          <p className="text-sm font-bold text-white">Telegram Alerts</p>
+          <p className="text-xs text-brand-muted leading-relaxed mt-1">
+            Get real-time alerts when your score, loan status, repayment status, bond status, or pool launch status changes.
+          </p>
+        </div>
+      </div>
+
+      {tg.error && (
+        <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-red-500/10 border border-red-500/20 mb-3">
+          <XCircle className="w-3.5 h-3.5 text-red-400 flex-shrink-0" />
+          <p className="text-xs text-red-300">{tg.error}</p>
+        </div>
+      )}
+
+      {showLinkHelp && (
+        <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-blue-500/10 border border-blue-500/20 mb-3">
+          <Info className="w-3.5 h-3.5 text-blue-400 flex-shrink-0" />
+          <p className="text-xs text-blue-300">Telegram will open. Tap <strong>Start</strong> to finish connecting alerts.</p>
+        </div>
+      )}
+
+      <button
+        onClick={handleEnable}
+        disabled={tg.linking}
+        className="w-full py-3 rounded-xl bg-blue-500 text-white font-bold text-sm hover:bg-blue-600 transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+      >
+        {tg.linking ? (
+          <>
+            <Loader2 className="w-4 h-4 animate-spin" />
+            Connecting...
+          </>
+        ) : (
+          <>
+            <Send className="w-4 h-4" />
+            Enable Telegram Alerts
+          </>
+        )}
+      </button>
+    </motion.div>
+  );
+}
+
+function SettingsPanel({ prefs, savePrefs }) {
   const [open, setOpen] = useState(false);
   const togglePref = (key) => savePrefs({ ...prefs, [key]: !prefs[key] });
 
@@ -120,7 +270,7 @@ function SettingsPanel({ prefs, savePrefs, telegram }) {
         className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-brand-card border border-brand-border text-sm text-brand-muted hover:text-white hover:border-brand-accent/20 transition-all"
       >
         <Settings className="w-4 h-4" />
-        <span>Alert Settings</span>
+        <span>In-App Alert Settings</span>
         <ChevronDown className={`w-3 h-3 ml-1 transition-transform ${open ? 'rotate-180' : ''}`} />
       </button>
       <AnimatePresence>
@@ -131,52 +281,30 @@ function SettingsPanel({ prefs, savePrefs, telegram }) {
             exit={{ opacity: 0, height: 0 }}
             className="overflow-hidden"
           >
-            <div className="mt-3 bg-brand-card rounded-2xl border border-brand-border p-5 space-y-4">
-              <div>
-                <p className="text-xs font-bold text-white uppercase tracking-wider mb-3">Notification Types</p>
-                {[
-                  { key: 'scoreDropAlerts', label: 'Score drops and level changes' },
-                  { key: 'loanAlerts', label: 'Loan due dates and overdue warnings' },
-                  { key: 'bondAlerts', label: 'Bond deposits, returns, and liquidations' },
-                  { key: 'repaymentReminders', label: 'Repayment confirmations' },
-                  { key: 'levelAlerts', label: 'Level unlock celebrations' },
-                ].map((item) => (
-                  <button
-                    key={item.key}
-                    onClick={() => togglePref(item.key)}
-                    className="flex items-center justify-between w-full py-2.5 border-b border-brand-border last:border-0"
-                  >
-                    <span className="text-xs text-brand-muted">{item.label}</span>
-                    <div className={`w-8 h-5 rounded-full transition-colors flex items-center ${
-                      prefs[item.key] ? 'bg-brand-accent justify-end' : 'bg-brand-border justify-start'
-                    }`}>
-                      <div className={`w-3.5 h-3.5 rounded-full mx-0.5 transition-colors ${
-                        prefs[item.key] ? 'bg-[#0A0A0F]' : 'bg-brand-muted'
-                      }`} />
-                    </div>
-                  </button>
-                ))}
-              </div>
-
-              <div className="pt-2 border-t border-brand-border">
-                <p className="text-xs font-bold text-white uppercase tracking-wider mb-3">Delivery Channels</p>
-                <div className={`flex items-center justify-between p-3 rounded-xl border ${
-                  telegram.connected ? 'border-blue-500/30 bg-blue-500/5' : 'border-brand-border'
-                }`}>
-                  <div className="flex items-center gap-3">
-                    <Send className={`w-4 h-4 ${telegram.connected ? 'text-blue-400' : 'text-brand-muted'}`} />
-                    <div>
-                      <p className="text-sm font-semibold text-white">Telegram Bot</p>
-                      <p className="text-[10px] text-brand-muted">
-                        {telegram.connected ? 'Connected' : 'Get real-time alerts via Telegram'}
-                      </p>
-                    </div>
+            <div className="mt-3 bg-brand-card rounded-2xl border border-brand-border p-5">
+              <p className="text-xs font-bold text-white uppercase tracking-wider mb-3">In-App Notification Types</p>
+              {[
+                { key: 'scoreDropAlerts', label: 'Score drops and level changes' },
+                { key: 'loanAlerts', label: 'Loan due dates and overdue warnings' },
+                { key: 'bondAlerts', label: 'Bond deposits, returns, and liquidations' },
+                { key: 'repaymentReminders', label: 'Repayment confirmations' },
+                { key: 'levelAlerts', label: 'Level unlock celebrations' },
+              ].map((item) => (
+                <button
+                  key={item.key}
+                  onClick={() => togglePref(item.key)}
+                  className="flex items-center justify-between w-full py-2.5 border-b border-brand-border last:border-0"
+                >
+                  <span className="text-xs text-brand-muted">{item.label}</span>
+                  <div className={`w-8 h-5 rounded-full transition-colors flex items-center ${
+                    prefs[item.key] ? 'bg-brand-accent justify-end' : 'bg-brand-border justify-start'
+                  }`}>
+                    <div className={`w-3.5 h-3.5 rounded-full mx-0.5 transition-colors ${
+                      prefs[item.key] ? 'bg-[#0A0A0F]' : 'bg-brand-muted'
+                    }`} />
                   </div>
-                  <span className="text-xs font-medium text-brand-muted bg-brand-border px-2 py-0.5 rounded-full">
-                    Coming soon
-                  </span>
-                </div>
-              </div>
+                </button>
+              ))}
             </div>
           </motion.div>
         )}
@@ -192,8 +320,9 @@ export default function AlertsPage() {
   const loan = ctx?.loan;
   const {
     notifications, loading, unreadCount, prefs, savePrefs,
-    telegram, saveTelegram, markAsRead, addNotification,
+    markAsRead, addNotification,
   } = useNotifications();
+  const tg = useTelegram();
   const [filter, setFilter] = useState('all');
   const [seeded, setSeeded] = useState(false);
 
@@ -336,7 +465,9 @@ export default function AlertsPage() {
         </div>
       </motion.div>
 
-      <SettingsPanel prefs={prefs} savePrefs={savePrefs} telegram={telegram} />
+      <TelegramCard tg={tg} />
+
+      <SettingsPanel prefs={prefs} savePrefs={savePrefs} />
 
       <div className="flex items-center gap-1 p-1 bg-brand-card rounded-xl border border-brand-border mb-6 overflow-x-auto">
         {FILTER_TABS.map((tab) => (
@@ -411,7 +542,7 @@ export default function AlertsPage() {
         className="mt-8 text-center"
       >
         <p className="text-[10px] text-brand-muted">
-          Alerts are generated based on your wallet activity, loan status, and trust profile. Telegram delivery coming soon.
+          Alerts are generated based on your wallet activity, loan status, and trust profile. Enable Telegram above for real-time delivery.
         </p>
       </motion.div>
     </div>

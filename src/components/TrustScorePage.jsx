@@ -1,10 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useWallet } from '@solana/wallet-adapter-react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import {
   ShieldCheck, Globe, CheckCircle, Zap, Hash, Award, RefreshCw,
-  Lock, ArrowUpRight, ExternalLink, ChevronRight, BarChart3, Brain,
+  Lock, ArrowUpRight, ExternalLink, ChevronRight, BarChart3, Brain, Loader2, XCircle, Unlink,
 } from 'lucide-react';
 import ScoreRing from './ScoreRing';
 import ScoreBreakdown from './ScoreBreakdown';
@@ -14,6 +14,7 @@ import LoanLevel from './LoanLevel';
 import BoostCard from './BoostCard';
 import { useAppContext } from '../App';
 import { SCORE_FACTORS, BASE_SCORE } from '../hooks/useCreditScore';
+import { useXAccount } from '../hooks/useXAccount';
 
 function XIcon({ className }) {
   return (
@@ -23,7 +24,7 @@ function XIcon({ className }) {
   );
 }
 
-function TrustSignalCard({ icon: Icon, label, pts, maxPts, value, status, action, delay = 0 }) {
+function TrustSignalCard({ icon: Icon, label, pts, maxPts, value, status, action, delay = 0, children }) {
   const pct = maxPts > 0 ? Math.min(100, (pts / maxPts) * 100) : 0;
   const statusColor = status === 'active' ? 'text-green-400' : status === 'partial' ? 'text-yellow-400' : 'text-brand-muted';
   const statusLabel = status === 'active' ? 'Active' : status === 'partial' ? 'Partial' : 'Not connected';
@@ -49,19 +50,20 @@ function TrustSignalCard({ icon: Icon, label, pts, maxPts, value, status, action
       <div className="h-1.5 bg-brand-border rounded-full overflow-hidden mb-3">
         <div className="h-full rounded-full transition-all duration-700" style={{ width: `${pct}%`, background: 'linear-gradient(90deg, #EC81FF, #B84FCC)' }} />
       </div>
-      {action && action.type !== 'soon' && (
+      {children}
+      {!children && action && action.type !== 'soon' && (
         <div className="flex items-center justify-between">
           <span className="text-xs text-brand-accent font-semibold">{action.label}</span>
           <ArrowUpRight className="w-3.5 h-3.5 text-brand-muted group-hover:text-brand-accent transition-colors" />
         </div>
       )}
-      {action && action.type === 'soon' && (
+      {!children && action && action.type === 'soon' && (
         <span className="text-xs font-medium text-brand-muted bg-brand-border px-2 py-0.5 rounded-full">Coming soon</span>
       )}
     </motion.div>
   );
-  if (action?.type === 'link') return <Link to={action.to}>{content}</Link>;
-  if (action?.type === 'external') return <a href={action.href} target="_blank" rel="noopener noreferrer">{content}</a>;
+  if (!children && action?.type === 'link') return <Link to={action.to}>{content}</Link>;
+  if (!children && action?.type === 'external') return <a href={action.href} target="_blank" rel="noopener noreferrer">{content}</a>;
   return content;
 }
 
@@ -75,8 +77,39 @@ export default function TrustScorePage({ scoreData }) {
   const ctx = useAppContext();
   const ika = ctx?.ika;
   const privateMode = ctx?.privateMode;
-  const { connected } = useWallet();
+  const { connected, publicKey } = useWallet();
   const [activeTab, setActiveTab] = useState('overview');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [xToast, setXToast] = useState(null);
+  const xAccount = useXAccount();
+
+  // Handle X OAuth callback URL params
+  useEffect(() => {
+    const xStatus = searchParams.get('x');
+    if (!xStatus) return;
+    const messages = {
+      connected: 'X account connected successfully. Your trust score will update shortly.',
+      error: 'X authentication failed. Please try again.',
+      expired: 'X authentication session expired. Please try again.',
+      token_error: 'Failed to authenticate with X. Please try again.',
+      profile_error: 'Failed to fetch your X profile. Please try again.',
+    };
+    const isSuccess = xStatus === 'connected';
+    setXToast({ message: messages[xStatus] || `X status: ${xStatus}`, type: isSuccess ? 'success' : 'error' });
+    if (isSuccess && publicKey) xAccount.checkConnection(publicKey.toBase58());
+    // Clean up URL params
+    searchParams.delete('x');
+    setSearchParams(searchParams, { replace: true });
+    const timer = setTimeout(() => setXToast(null), 6000);
+    return () => clearTimeout(timer);
+  }, [searchParams]);
+
+  // Check X connection status on mount
+  useEffect(() => {
+    if (publicKey && connected) {
+      xAccount.checkConnection(publicKey.toBase58());
+    }
+  }, [publicKey, connected]);
 
   if (!connected) {
     return (
@@ -116,8 +149,33 @@ export default function TrustScorePage({ scoreData }) {
     SCORE_FACTORS.creditMaturity.max + SCORE_FACTORS.borrowGrowth.max;
   const trustPct = maxTrustPts > 0 ? Math.round((totalTrustPts / maxTrustPts) * 100) : 0;
 
+  const xIsActive = xAccount.isConnected || (breakdown.xVerification || 0) > 0;
+  const xValueText = xIsActive
+    ? `@${xAccount.username || 'verified'} connected (+${xAccount.verificationScore || breakdown.xVerification || 0} pts)`
+    : 'Link your X account to prove social identity and earn up to +100 pts';
+
   return (
     <div className="max-w-5xl mx-auto px-4 pb-20 pt-4">
+      {/* X OAuth Toast */}
+      <AnimatePresence>
+        {xToast && (
+          <motion.div
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -20 }}
+            className={`fixed top-4 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 px-4 py-3 rounded-xl border text-sm font-medium shadow-lg ${
+              xToast.type === 'success'
+                ? 'bg-green-500/10 border-green-500/30 text-green-400'
+                : 'bg-red-500/10 border-red-500/30 text-red-400'
+            }`}
+          >
+            {xToast.type === 'success' ? <CheckCircle className="w-4 h-4" /> : <XCircle className="w-4 h-4" />}
+            {xToast.message}
+            <button onClick={() => setXToast(null)} className="ml-2 opacity-60 hover:opacity-100">✕</button>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Header */}
       <motion.div
         initial={{ opacity: 0, y: -10 }}
@@ -274,8 +332,34 @@ export default function TrustScorePage({ scoreData }) {
               <h3 className="text-sm font-semibold text-white">Identity Signals</h3>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <TrustSignalCard icon={XIcon} label="X Verification" pts={breakdown.xVerification || 0} maxPts={SCORE_FACTORS.xVerification.max}
-                  status={(breakdown.xVerification || 0) > 0 ? 'active' : 'inactive'} value={(breakdown.xVerification || 0) > 0 ? 'Account verified via OAuth' : 'Link your X account to prove social identity'}
-                  action={{ type: 'soon', label: 'Coming soon' }} delay={0.1} />
+                  status={xIsActive ? 'active' : 'inactive'} value={xValueText} delay={0.1}>
+                  {xAccount.loading ? (
+                    <div className="flex items-center gap-2 text-xs text-brand-muted">
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" /> Checking X connection...
+                    </div>
+                  ) : xIsActive ? (
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <CheckCircle className="w-3.5 h-3.5 text-green-400" />
+                        <span className="text-xs text-green-400 font-semibold">Verified</span>
+                        {xAccount.username && <span className="text-xs text-brand-muted">@{xAccount.username}</span>}
+                      </div>
+                      <button
+                        onClick={() => publicKey && xAccount.disconnect(publicKey.toBase58())}
+                        className="flex items-center gap-1 text-xs text-red-400/60 hover:text-red-400 transition-colors"
+                      >
+                        <Unlink className="w-3 h-3" /> Disconnect
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => publicKey && xAccount.startAuth(publicKey.toBase58())}
+                      className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-brand-accent/10 border border-brand-accent/20 text-xs font-semibold text-brand-accent hover:bg-brand-accent/20 transition-colors"
+                    >
+                      <XIcon className="w-3.5 h-3.5" /> Connect X Account
+                    </button>
+                  )}
+                </TrustSignalCard>
                 <TrustSignalCard icon={Hash} label=".sol Identity" pts={breakdown.solIdentity || 0} maxPts={SCORE_FACTORS.solIdentity.max}
                   status={(breakdown.solIdentity || 0) > 0 ? 'active' : 'inactive'} value={scoreData?.solDomain ? `Domain: ${scoreData.solDomain}` : 'Claim a .sol domain via SNS.id'}
                   action={{ type: 'external', href: 'https://sns.id', label: 'Get .sol domain' }} delay={0.15} />
