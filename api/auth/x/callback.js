@@ -1,6 +1,7 @@
-import { cors, getRedis, sbUpdate, X_CLIENT_ID, X_CLIENT_SECRET, X_REDIRECT_URI, APP_URL } from '../../_lib/shared.js';
+// Handled by catch-all api/[...path].js -> server/app.ts
+/* DISABLED:
 
-export default async function handler(req, res) {
+async function _disabled(req, res) {
   if (cors(req, res)) return;
 
   const { code, state, error: oauthError } = req.query || {};
@@ -51,3 +52,4 @@ export default async function handler(req, res) {
 
   return res.redirect(302, `${APP_URL}/?x_connected=true&x_username=${encodeURIComponent(xUser.username || '')}`);
 }
+*/

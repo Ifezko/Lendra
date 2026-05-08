@@ -1,6 +1,7 @@
-import { cors, getQuicknodeHttpUrl, supabaseConfigured } from '../_lib/shared.js';
+// Handled by catch-all api/[...path].js -> server/app.ts
+/* DISABLED:
 
-export default async function handler(req, res) {
+async function _disabled(req, res) {
   if (cors(req, res)) return;
 
   if (req.method === 'GET') {
@@ -45,3 +46,4 @@ export default async function handler(req, res) {
     supabaseConfigured,
   });
 }
+*/

@@ -1,6 +1,7 @@
-import { cors, sbSelect } from '../../_lib/shared.js';
+// Handled by catch-all api/[...path].js -> server/app.ts
+/* DISABLED:
 
-export default async function handler(req, res) {
+async function _disabled(req, res) {
   if (cors(req, res)) return;
   const wallet = req.query?.wallet || '';
   if (!wallet) return res.status(400).json({ ok: false, error: 'wallet query required' });
@@ -17,3 +18,4 @@ export default async function handler(req, res) {
     });
   } catch (e) { return res.status(500).json({ ok: false, error: e.message }); }
 }
+*/

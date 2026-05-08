@@ -1,6 +1,7 @@
-import { cors, getRedis, genCodeVerifier, genCodeChallenge, genSecureCode, X_CLIENT_ID, X_REDIRECT_URI, X_SCOPES, APP_URL } from '../../_lib/shared.js';
+// Handled by catch-all api/[...path].js -> server/app.ts
+/* DISABLED:
 
-export default async function handler(req, res) {
+async function _disabled(req, res) {
   if (cors(req, res)) return;
   if (!X_CLIENT_ID) return res.status(500).json({ ok: false, error: 'X OAuth not configured' });
 
@@ -26,3 +27,4 @@ export default async function handler(req, res) {
 
   return res.redirect(302, `https://x.com/i/oauth2/authorize?${params}`);
 }
+*/

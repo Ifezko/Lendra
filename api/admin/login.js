@@ -5,7 +5,8 @@ const ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'admin@lendra.io';
 const ADMIN_PASSWORD_HASH = process.env.ADMIN_PASSWORD_HASH || '';
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'lendra-dev-2024';
 
-export default async function handler(req, res) {
+// DISABLED: Handled by catch-all api/[...path].js
+async function _disabled(req, res) {
   if (cors(req, res)) return;
   if (req.method !== 'POST') return res.status(405).json({ ok: false, error: 'Method not allowed' });
 

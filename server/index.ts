@@ -1,16 +1,23 @@
-import Fastify from 'fastify';
-import cors from '@fastify/cors';
-import { Redis } from '@upstash/redis';
-import { randomUUID, getRandomValues, createHash } from 'crypto';
+import { buildApp } from './app.js';
 
-const app = Fastify({ logger: true });
-await app.register(cors, { origin: true });
+const app = await buildApp();
 
-// ── Environment ──────────────────────────────────────────────────────
+const port = Number(process.env.PORT) || 3001;
+try {
+  await app.listen({ port, host: '0.0.0.0' });
+  console.log(`Lendra backend on port ${port}`);
+} catch (e: any) {
+  console.error(`[Server] Failed:`, e.message);
+  process.exit(1);
+}
 
-const SUPABASE_URL = process.env.VITE_SUPABASE_URL || '';
-const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
-const APP_URL = process.env.VITE_APP_URL || 'https://lendra.finance';
+// ── DEAD CODE BELOW — kept only to avoid str_replace scope issues ────
+// All routes are now defined in server/app.ts via buildApp().
+// This file is the entry point for the local dev server only.
+const __DEAD_CODE_START__ = true; if (false) {
+const SUPABASE_URL = '';
+const SUPABASE_SERVICE_KEY = '';
+const APP_URL = '';
 
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '';
 const TELEGRAM_BOT_USERNAME = process.env.TELEGRAM_BOT_USERNAME || '';
@@ -641,6 +648,4 @@ app.get('/api/loan-history/:wallet', async (req) => {
 });
 
 // ══════════════════════════════════════════════════════════════════════
-const port = 3001;
-try { await app.listen({ port, host: '0.0.0.0' }); console.log(`Lendra backend on port ${port}`); }
-catch (e: any) { console.error(`[Server] Failed:`, e.message); process.exit(1); }
+} // end dead code block

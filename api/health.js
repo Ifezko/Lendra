@@ -1,6 +1,6 @@
-import { cors, supabaseConfigured, redisConfigured, APP_URL, TELEGRAM_BOT_TOKEN, TELEGRAM_WEBHOOK_SECRET, X_CLIENT_ID, X_CLIENT_SECRET, QUICKNODE_WEBHOOK_SECRET } from './_lib/shared.js';
-
-export default function handler(req, res) {
+// Handled by catch-all api/[...path].js -> server/app.ts
+/* DISABLED - all routes served by catch-all:
+function _handler(req, res) {
   if (cors(req, res)) return;
   res.status(200).json({
     ok: true,
@@ -18,3 +18,4 @@ export default function handler(req, res) {
     timestamp: new Date().toISOString(),
   });
 }
+*/

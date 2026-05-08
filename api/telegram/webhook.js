@@ -1,6 +1,7 @@
-import { cors, getRedis, sbInsert, sbUpdate, sbSelect, sendTG, TELEGRAM_BOT_TOKEN, TELEGRAM_BOT_USERNAME, TELEGRAM_WEBHOOK_SECRET, APP_URL } from '../_lib/shared.js';
+// Handled by catch-all api/[...path].js -> server/app.ts
+/* DISABLED:
 
-export default async function handler(req, res) {
+async function _disabled(req, res) {
   if (cors(req, res)) return;
 
   if (req.method === 'GET') {
@@ -62,3 +63,4 @@ export default async function handler(req, res) {
   await sendTG(chatId, 'Open Lendra and click Enable Telegram Alerts to connect this bot.');
   return res.status(200).json({ ok: true });
 }
+*/

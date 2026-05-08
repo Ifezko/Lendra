@@ -1,4 +1,5 @@
-import { cors, getRedis } from '../_lib/shared.js';
+// Handled by catch-all api/[...path].js -> server/app.ts
+/* DISABLED:
 
 const DEFAULT_POOL = {
   total_deposits_sol: 0,
@@ -14,7 +15,7 @@ const DEFAULT_POOL = {
   waitlist_count: 0,
 };
 
-export default async function handler(req, res) {
+async function _disabled(req, res) {
   if (cors(req, res)) return;
   const redis = getRedis();
   try {
@@ -25,3 +26,4 @@ export default async function handler(req, res) {
     return res.status(200).json({ ok: true, pool: DEFAULT_POOL });
   }
 }
+*/

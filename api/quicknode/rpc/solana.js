@@ -1,6 +1,7 @@
-import { cors, getQuicknodeHttpUrl } from '../../_lib/shared.js';
+// Handled by catch-all api/[...path].js -> server/app.ts
+/* DISABLED:
 
-export default async function handler(req, res) {
+async function _disabled(req, res) {
   if (cors(req, res)) return;
   if (req.method !== 'POST') {
     return res.status(200).json({ ok: true, service: 'quicknode-rpc-solana', message: 'Use POST with JSON-RPC body' });
@@ -47,3 +48,4 @@ export default async function handler(req, res) {
     });
   }
 }
+*/
