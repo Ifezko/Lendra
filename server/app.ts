@@ -111,6 +111,109 @@ function genCodeVerifier(): string { const a = new Uint8Array(32); getRandomValu
 function genCodeChallenge(v: string): string { return createHash('sha256').update(v).digest('base64url'); }
 function genSecureCode(len = 32): string { const a = new Uint8Array(len); getRandomValues(a); return Buffer.from(a).toString('hex').slice(0, len); }
 
+// ── Score computation constants (server-side, mirrors useCreditScore) ─
+
+const BASE_SCORE = 100;
+const MAX_SCORE_LIMIT = 1000;
+
+const LOAN_LEVELS_SERVER = [
+  { level: 1, amount: 10, minScore: 350, repayments: 0, spendGate: 5, label: 'Starter' },
+  { level: 2, amount: 25, minScore: 430, repayments: 1, spendGate: 15, label: 'Bronze' },
+  { level: 3, amount: 50, minScore: 500, repayments: 2, spendGate: 15, label: 'Silver' },
+  { level: 4, amount: 100, minScore: 575, repayments: 3, spendGate: 30, label: 'Gold' },
+  { level: 5, amount: 200, minScore: 650, repayments: 4, spendGate: 75, label: 'Platinum', requiresX: true },
+  { level: 6, amount: 400, minScore: 725, repayments: 5, spendGate: 200, label: 'Diamond', requiresX: true },
+] as const;
+
+function getTierServer(score: number): { label: string; color: string } {
+  if (score >= 725) return { label: 'Diamond', color: '#EC81FF' };
+  if (score >= 650) return { label: 'Platinum', color: '#C0C0E0' };
+  if (score >= 575) return { label: 'Gold', color: '#FFD881' };
+  if (score >= 500) return { label: 'Silver', color: '#81D4FF' };
+  if (score >= 430) return { label: 'Bronze', color: '#CD7F32' };
+  return { label: 'Starter', color: '#FF8181' };
+}
+
+function getLoanLevelServer(score: number, cleanRepayments: number, hasXVer: boolean) {
+  let current: any = { level: 0, amount: 0, spendGate: 5, label: 'None', next: LOAN_LEVELS_SERVER[0] };
+  for (let i = LOAN_LEVELS_SERVER.length - 1; i >= 0; i--) {
+    const lvl = LOAN_LEVELS_SERVER[i] as any;
+    if (score >= lvl.minScore && cleanRepayments >= lvl.repayments) {
+      if (lvl.requiresX && !hasXVer) continue;
+      current = { ...lvl, next: LOAN_LEVELS_SERVER[i + 1] || null };
+      break;
+    }
+  }
+  if (current.level === 0) current.next = LOAN_LEVELS_SERVER[0];
+  return current;
+}
+
+async function serverRpc(rpcUrl: string, method: string, params: any[] = []) {
+  const res = await fetch(rpcUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }),
+  });
+  if (!res.ok) throw new Error(`RPC ${method} failed: ${res.status}`);
+  const data = await res.json();
+  if (data.error) throw new Error(data.error.message || `RPC error: ${method}`);
+  return data.result;
+}
+
+async function persistScanServer(wallet: string, result: any, repStats: any, prevScan: any) {
+  const { score, tier, loanLevel, walletAgeDays, txCount, monthlyActivity,
+    protocolCount, balanceUsd, spend90d, canBorrow, breakdown } = result;
+
+  const scanRow: any = {
+    wallet_address: wallet, score, max_score: MAX_SCORE_LIMIT,
+    tier: tier.label, loan_level: loanLevel.level, level_name: loanLevel.label,
+    eligible: canBorrow, eligibility_status: canBorrow ? 'eligible' : 'not_eligible',
+    base_score: BASE_SCORE,
+    wallet_age_points: breakdown.age, transaction_volume_points: breakdown.volume,
+    monthly_consistency_points: breakdown.consistency, protocol_diversity_points: breakdown.diversity,
+    portfolio_value_points: breakdown.portfolio, repayment_history_points: breakdown.repayment,
+    x_verification_points: breakdown.xVerification, cross_chain_credit_points: breakdown.crossChain,
+    sol_identity_points: breakdown.solIdentity, superteam_pow_points: breakdown.superteam,
+    credit_maturity_points: breakdown.creditMaturity, borrow_growth_points: breakdown.borrowGrowth,
+    wallet_age_days: walletAgeDays, total_transactions: txCount,
+    avg_monthly_transactions: monthlyActivity > 0 ? Math.round(txCount / monthlyActivity) : 0,
+    unique_protocols: protocolCount,
+    recent_spend_90d: Math.round(spend90d * 100) / 100,
+    portfolio_value_usd: Math.round(balanceUsd * 100) / 100,
+  };
+
+  const scanResult = await sbInsert('wallet_scans', scanRow);
+  const scan = scanResult?.[0];
+
+  if (scan) {
+    try {
+      await sbInsert('eligibility_checks', {
+        wallet_address: wallet, scan_id: scan.id,
+        score_passed: score >= 350,
+        spend_gate_passed: spend90d >= (loanLevel.spendGate || 5),
+        active_loan_gate_passed: true,
+        repayment_requirement_passed: (repStats?.clean_repayments || 0) >= (loanLevel.repayments || 0),
+        level_requirement_passed: true,
+        eligible_level: loanLevel.level, eligible_level_name: loanLevel.label,
+        eligible_amount: loanLevel.amount, borrow_asset: 'USDC',
+      });
+    } catch {}
+  }
+
+  try { await sbUpsert('wallet_profiles', { wallet_address: wallet, updated_at: new Date().toISOString() }); } catch {}
+
+  if (prevScan && prevScan.score !== score) {
+    try {
+      await sbInsert('score_change_events', {
+        wallet_address: wallet, previous_score: prevScan.score, new_score: score,
+        score_delta: score - prevScan.score, previous_level: prevScan.loan_level,
+        new_level: loanLevel.level, previous_eligible: prevScan.eligible,
+        new_eligible: canBorrow, reason: 'wallet_scan', trigger_event: 'compute_score',
+      });
+    } catch {}
+  }
+}
+
 // ══════════════════════════════════════════════════════════════════════
 // BUILD APP — export for both local dev and Vercel serverless
 // ══════════════════════════════════════════════════════════════════════
@@ -161,18 +264,184 @@ export async function buildApp(): Promise<FastifyInstance> {
     ok: true, service: 'quicknode-rpc-solana', message: 'Use POST with JSON-RPC body',
   }));
 
-  // ── SCORE SCAN (stub — actual scanning is client-side) ───────────
+  // ── SCORE SCAN (full server-side wallet scoring) ─────────────────
   app.get('/api/score/scan', async () => {
     const rpcUrl = getQuicknodeHttpUrl();
-    return { ok: true, service: 'score-scan', message: 'Use POST to scan wallet', configured: !!rpcUrl && supabaseConfigured, rpcAvailable: !!rpcUrl, supabaseAvailable: supabaseConfigured };
+    return { ok: true, service: 'score-scan', message: 'Use POST to scan wallet', configured: !!rpcUrl && supabaseConfigured };
   });
 
   app.post('/api/score/scan', async (req, reply) => {
     const { wallet_address } = req.body as any || {};
     if (!wallet_address) return reply.code(400).send({ ok: false, error: 'wallet_address required' });
+    if (!/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(wallet_address)) {
+      return reply.code(400).send({ ok: false, error: 'Invalid wallet address format' });
+    }
     const rpcUrl = getQuicknodeHttpUrl();
-    if (!rpcUrl) return reply.code(500).send({ ok: false, stage: 'rpc_config', error: 'HTTP Solana RPC endpoint is required.' });
-    return { ok: true, message: 'Wallet scan runs client-side via /api/quicknode/rpc/solana.', wallet_address, rpcConfigured: true, supabaseConfigured };
+    if (!rpcUrl) {
+      return reply.code(500).send({ ok: false, stage: 'quicknode_rpc_config', error: 'QuickNode Solana HTTP RPC URL is required for wallet scan.' });
+    }
+    if (!supabaseConfigured) {
+      return reply.code(500).send({ ok: false, stage: 'supabase_config', error: 'Supabase not configured' });
+    }
+
+    try {
+      // ── Fetch SOL price ───────────────────────────────────────────
+      let solPrice = 0;
+      try {
+        const pr = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=solana&vs_currencies=usd');
+        if (pr.ok) { const pd = await pr.json(); solPrice = pd?.solana?.usd || 0; }
+      } catch { /* non-critical */ }
+
+      // ── RPC: getBalance ───────────────────────────────────────────
+      const balanceResult = await serverRpc(rpcUrl, 'getBalance', [wallet_address, { commitment: 'confirmed' }]);
+      const balanceLamports = balanceResult?.value ?? 0;
+      const balanceSol = balanceLamports / 1e9;
+      const balanceUsd = balanceSol * solPrice;
+
+      // ── RPC: getSignaturesForAddress ──────────────────────────────
+      const signatures = await serverRpc(rpcUrl, 'getSignaturesForAddress', [wallet_address, { limit: 1000, commitment: 'confirmed' }]);
+      const txCount = signatures?.length || 0;
+
+      const emptyBreakdown = {
+        age: 0, volume: 0, consistency: 0, diversity: 0, portfolio: 0,
+        repayment: 0, xVerification: 0, crossChain: 0, solIdentity: 0, superteam: 0,
+        creditMaturity: 0, borrowGrowth: 0,
+      };
+
+      // Empty wallet → base score
+      if (txCount === 0) {
+        const tier = getTierServer(BASE_SCORE);
+        const loanLevel = getLoanLevelServer(BASE_SCORE, 0, false);
+        const result = {
+          score: BASE_SCORE, tier, loanLevel,
+          walletAgeDays: 0, txCount: 0, monthlyActivity: 0, protocolCount: 0,
+          balanceUsd, spend90d: 0, canBorrow: false, cleanRepayments: 0,
+          breakdown: emptyBreakdown,
+        };
+        persistScanServer(wallet_address, result, null, null).catch(() => {});
+        return { ok: true, data: result };
+      }
+
+      // ── Wallet age ────────────────────────────────────────────────
+      const oldestTx = signatures[signatures.length - 1];
+      const oldestTime = oldestTx?.blockTime ? oldestTx.blockTime * 1000 : Date.now();
+      const walletAgeDays = Math.floor((Date.now() - oldestTime) / (1000 * 60 * 60 * 24));
+
+      // ── Monthly activity & recent spend ───────────────────────────
+      const monthSet = new Set<string>();
+      const ninetyDaysAgo = Date.now() - 90 * 24 * 60 * 60 * 1000;
+      let recentTxCount = 0;
+      for (const sig of signatures) {
+        if (sig.blockTime) {
+          const d = new Date(sig.blockTime * 1000);
+          monthSet.add(`${d.getFullYear()}-${d.getMonth()}`);
+          if (sig.blockTime * 1000 >= ninetyDaysAgo) recentTxCount++;
+        }
+      }
+      const monthlyActivity = monthSet.size;
+      const spend90d = recentTxCount * 0.015 * solPrice;
+
+      // ── Protocol diversity (sample first 20 txns) ─────────────────
+      const programSet = new Set<string>();
+      try {
+        const sampleSigs = signatures.slice(0, 50);
+        for (let i = 0; i < Math.min(20, sampleSigs.length); i++) {
+          const txResult = await serverRpc(rpcUrl, 'getTransaction', [
+            sampleSigs[i].signature,
+            { encoding: 'jsonParsed', maxSupportedTransactionVersion: 0, commitment: 'confirmed' },
+          ]);
+          if (txResult?.transaction?.message?.accountKeys) {
+            for (const key of txResult.transaction.message.accountKeys) {
+              const addr = typeof key === 'string' ? key : key?.pubkey;
+              if (addr && addr !== wallet_address && addr !== '11111111111111111111111111111111') {
+                programSet.add(addr);
+              }
+            }
+          }
+        }
+      } catch { /* fallback */ }
+      const protocolCount = Math.min(programSet.size, 50);
+
+      // ── DB: repayment stats & previous scan ───────────────────────
+      let repStats: any = null;
+      try { const rs = await sbSelect('repayment_stats', `select=*&wallet_address=eq.${wallet_address}&limit=1`); repStats = rs?.[0] || null; } catch {}
+
+      let prevScan: any = null;
+      try { const ps = await sbSelect('wallet_scans', `select=*&wallet_address=eq.${wallet_address}&order=created_at.desc&limit=1`); prevScan = ps?.[0] || null; } catch {}
+
+      // ── DB: X verification score ──────────────────────────────────
+      let xVerificationScore = 0;
+      try {
+        const xr = await sbSelect('wallet_profiles', `select=x_verification_score,x_connected&wallet_address=eq.${wallet_address}&limit=1`);
+        if (xr?.[0]?.x_connected) xVerificationScore = xr[0].x_verification_score || 0;
+      } catch {}
+
+      // ── Score computation ─────────────────────────────────────────
+      const ageScore = Math.min(60, Math.floor((walletAgeDays / 365) * 60));
+      const volumeScore = Math.min(60, Math.floor((txCount / 500) * 60));
+      const consistencyScore = Math.min(60, Math.floor((monthlyActivity / 12) * 60));
+      const diversityScore = Math.min(70, Math.floor((protocolCount / 15) * 70));
+      const portfolioScore = Math.min(40, Math.floor((balanceUsd / 5000) * 40));
+
+      const cleanRepayments = repStats?.clean_repayments || 0;
+      const earlyRepayments = repStats?.early_repayments || 0;
+      const lateRepayments = repStats?.late_repayments || 0;
+      const hasDefault = (repStats?.defaults || 0) > 0;
+      const currentLevel = repStats?.current_level || 0;
+      const qualifyingReps = repStats?.qualifying_higher_borrow_repayments || 0;
+
+      let repaymentScore = 0;
+      if (!hasDefault) {
+        const rpBase = Math.min(cleanRepayments * 25, 140);
+        const earlyBonus = Math.min(earlyRepayments * 5, 20);
+        const latePenalty = lateRepayments * 15;
+        repaymentScore = Math.max(0, Math.min(140, rpBase + earlyBonus - latePenalty));
+      }
+
+      const MATURITY_BONUSES: Record<number, number> = { 3: 20, 4: 25, 5: 30, 6: 35 };
+      let creditMaturityScore = 0;
+      for (const [lvl, bonus] of Object.entries(MATURITY_BONUSES)) {
+        if (currentLevel >= parseInt(lvl)) creditMaturityScore += bonus;
+      }
+      creditMaturityScore = Math.min(110, creditMaturityScore);
+
+      const borrowGrowthScore = Math.min(100, qualifyingReps * 5);
+      const crossChainScore = 0;
+      const solIdentityScore = 0;
+      const superteamScore = 0;
+
+      const totalScore = Math.min(MAX_SCORE_LIMIT, BASE_SCORE +
+        ageScore + volumeScore + consistencyScore + diversityScore + portfolioScore +
+        repaymentScore + xVerificationScore + crossChainScore + solIdentityScore + superteamScore +
+        creditMaturityScore + borrowGrowthScore
+      );
+
+      const tier = getTierServer(totalScore);
+      const hasXVer = xVerificationScore > 0;
+      const loanLevel = getLoanLevelServer(totalScore, cleanRepayments, hasXVer);
+      const canBorrow = totalScore >= 350 && spend90d >= (loanLevel.spendGate || 5);
+
+      const result = {
+        score: totalScore, tier, loanLevel,
+        walletAgeDays, txCount, monthlyActivity, protocolCount,
+        balanceUsd, spend90d: Math.round(spend90d * 100) / 100, canBorrow, cleanRepayments,
+        breakdown: {
+          age: ageScore, volume: volumeScore, consistency: consistencyScore,
+          diversity: diversityScore, portfolio: portfolioScore,
+          repayment: repaymentScore, xVerification: xVerificationScore,
+          crossChain: crossChainScore, solIdentity: solIdentityScore, superteam: superteamScore,
+          creditMaturity: creditMaturityScore, borrowGrowth: borrowGrowthScore,
+        },
+      };
+
+      // Persist to DB (non-blocking)
+      persistScanServer(wallet_address, result, repStats, prevScan).catch(() => {});
+
+      return { ok: true, data: result };
+    } catch (err: any) {
+      console.error('[score/scan] Error:', err.message);
+      return reply.code(500).send({ ok: false, stage: 'scan_error', error: err.message });
+    }
   });
 
   // ── BORROW APPLY (legacy standalone route) ───────────────────────
