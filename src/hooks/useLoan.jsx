@@ -37,9 +37,11 @@ export function useLoan() {
     setLoading(true);
     setError(null);
     try {
-      const { wallet, amount, apr, termDays, bondAmount, reason, level, score, txSignature, levelName, purposeTags } = loanData;
+      const { wallet, amount, apr, feePercent, termDays, bondAmount, reason, level, score, txSignature, levelName, purposeTags, borrowAsset, loanSource, isSimulated } = loanData;
 
-      if (!wallet || !amount || !apr || !termDays || !reason || !txSignature) {
+      // Accept either apr (legacy) or feePercent (new flat-fee model)
+      const effectiveRate = feePercent ?? apr;
+      if (!wallet || !amount || effectiveRate == null || !termDays || !reason || !txSignature) {
         throw new Error('Missing required fields');
       }
 
@@ -49,15 +51,18 @@ export function useLoan() {
         throw new Error('Active loan already exists for this wallet');
       }
 
-      const interest = amount * (apr / 100 / 365) * termDays;
+      // Support both APR-based interest and flat fee percentage
+      const interest = feePercent != null
+        ? amount * (feePercent / 100)
+        : amount * (apr / 100 / 365) * termDays;
       const totalRepay = amount + interest;
       const dueDate = new Date(Date.now() + termDays * 24 * 60 * 60 * 1000).toISOString();
 
       const loanRow = {
         wallet_address: wallet,
-        borrow_asset: 'USDC',
+        borrow_asset: borrowAsset || 'USDC',
         loan_amount: amount,
-        apr,
+        apr: effectiveRate,
         interest_amount: Math.round(interest * 10000) / 10000,
         total_repayment: Math.round(totalRepay * 10000) / 10000,
         bond_amount: bondAmount || 0,
@@ -66,9 +71,15 @@ export function useLoan() {
         level_name: levelName || '',
         loan_purpose_text: reason,
         loan_purpose_tags: purposeTags || [],
-        status: 'active',
+        status: isSimulated ? 'simulated' : 'active',
         due_date: dueDate,
         borrow_tx_hash: txSignature,
+        loan_source: loanSource || 'lendra_credit_pool',
+        is_simulated: !!isSimulated,
+        loan_term_days: termDays,
+        loan_fee_percentage: feePercent ?? 0,
+        loan_fee_amount: Math.round(interest * 10000) / 10000,
+        fee_model: feePercent != null ? 'fixed_term_fee' : 'apr',
       };
 
       const loan = await dbCreateLoan(loanRow);
@@ -78,9 +89,9 @@ export function useLoan() {
       insertLoanEvent({
         wallet_address: wallet,
         event_type: 'borrow',
-        borrow_asset: 'USDC',
+        borrow_asset: borrowAsset || 'USDC',
         loan_amount: amount,
-        apr,
+        apr: effectiveRate,
         interest_amount: loanRow.interest_amount,
         total_repayment: loanRow.total_repayment,
         bond_amount: bondAmount || 0,
@@ -89,7 +100,7 @@ export function useLoan() {
         level_name: levelName || '',
         loan_purpose_text: reason,
         loan_purpose_tags: purposeTags || [],
-        status: 'active',
+        status: isSimulated ? 'simulated' : 'active',
         due_date: dueDate,
         transaction_hash: txSignature,
       }).catch(() => {});
@@ -103,11 +114,11 @@ export function useLoan() {
           loan_amount: amount,
           bond_percentage: 30,
           bond_amount_usd: bondAmount,
-          borrow_asset: 'USDC',
-          bond_token: 'USDC',
+          borrow_asset: borrowAsset || 'USDC',
+          bond_token: borrowAsset || 'USDC',
           loan_level: level || 0,
           level_name: levelName || '',
-          status: 'locked',
+          status: isSimulated ? 'simulated_lock' : 'locked',
           tx_hash: txSignature,
         }).catch(() => {});
       }

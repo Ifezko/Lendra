@@ -272,7 +272,8 @@ function AppContent() {
         {adjustedScoreData && !aiDrawerOpen && (
           <button
             onClick={() => setAiDrawerOpen(true)}
-            className="fixed bottom-6 right-6 w-14 h-14 rounded-2xl bg-gradient-to-br from-brand-accent to-brand-accentDark text-white flex items-center justify-center shadow-lg shadow-brand-accent/20 hover:shadow-brand-accent/40 hover:scale-105 transition-all z-40"
+            className="fixed bottom-6 right-6 w-14 h-14 rounded-2xl text-white flex items-center justify-center shadow-lg hover:scale-105 transition-all z-40"
+            style={{ background: '#14ADAD', boxShadow: '0 10px 15px -3px rgba(20,173,173,0.25)' }}
             title="Lendra AI — Explain your score"
           >
             <svg className="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">

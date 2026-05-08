@@ -27,8 +27,8 @@ const TERMS = [
 const PURPOSE_CHIPS = [
   'DeFi opportunity',
   'NFT purchase',
-  'Token swap',
-  'Protocol participation',
+  'LP Provision',
+  'Touch grass',
   'Gas fees',
   'Other',
 ];
@@ -130,7 +130,14 @@ export default function BorrowPage() {
 
       setTxSignature(simId);
       setStep('success');
-      ctx?.refreshScore();
+
+      // Refresh loan data only — do NOT call ctx.refreshScore() here because
+      // it triggers computeScore() which sets loading=true in useCreditScore,
+      // causing App.jsx to unmount BorrowPage (shows LoadingState) and losing
+      // the success step state.
+      const wallet = publicKey.toBase58();
+      loan.fetchActiveLoan(wallet);
+      loan.fetchHistory(wallet);
     } catch (err) {
       console.error('Borrow simulation failed:', err);
       setTxError(err.message || 'Simulation failed');
@@ -165,7 +172,7 @@ export default function BorrowPage() {
     );
   }
 
-  if (loan?.activeLoan) {
+  if (loan?.activeLoan && step === 'form') {
     return (
       <div className="max-w-lg mx-auto px-4 pt-12">
         <motion.div
