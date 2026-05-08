@@ -13,7 +13,7 @@ export default {
           cardHover: '#1A1A25',
           border: '#1E1E2A',
           text: '#E0E0E8',
-          muted: '#6B6B80',
+          muted: '#ADADB5',
         },
       },
       fontFamily: {
