@@ -1,0 +1,92 @@
+# Lendra Architecture
+
+## Product Flow
+
+```text
+Connect wallet
+→ scan wallet through QuickNode
+→ calculate Lendra Score
+→ show Trust Score and tier
+→ simulate borrowing
+→ calculate fee and 30% bond
+→ join pool waitlist
+→ receive Telegram alert when pool goes live
+```
+
+## Frontend
+
+- Vite
+- React
+- TypeScript
+- Tailwind CSS
+
+## Backend
+
+- Fastify backend
+- Vercel production deployment
+- API routes under `/api/...`
+
+## Database
+
+Supabase stores:
+
+- wallet profiles
+- wallet scans
+- eligibility checks
+- borrow simulations
+- pool waitlist intent
+- notification events
+- X verification events
+- partner events
+- social credit cards
+- Lendra AI / QVAC events
+- admin analytics
+
+## Key Tables
+
+- `wallet_profiles`
+- `wallet_scans`
+- `eligibility_checks`
+- `loan_events`
+- `pool_launch_waitlist`
+- `loan_pricing_rules`
+- `notification_events`
+- `x_verification_events`
+- `partner_events`
+- `social_credit_cards`
+- `qvac_events`
+- `credit_pool_state`
+
+## QuickNode Integration
+
+QuickNode is used as Lendra’s Solana infrastructure provider.
+
+- `QUICKNODE_HTTP_URL`: wallet scans and RPC reads
+- `VITE_PUBLIC_QUICKNODE_WSS`: future live wallet activity subscriptions
+- `QUICKNODE_WEBHOOK_SECRET`: webhook verification
+- `/api/webhooks/quicknode`: webhook receiver
+
+## Lendra Credit Pool
+
+Current mode: beta/simulation.
+
+The MVP validates borrowing demand before live lending.
+
+Future live flow:
+
+```text
+User qualifies
+→ user deposits 30% bond
+→ Lendra Credit Pool disburses USDC
+→ user repays principal + fee
+→ bond is returned
+→ score improves
+```
+
+## Security Notes
+
+- Server secrets are never exposed in frontend.
+- Admin uses role-based access.
+- Sensitive admin routes require authenticated sessions.
+- X uses OAuth, not DM OTP.
+- Telegram webhook validates secret token.
