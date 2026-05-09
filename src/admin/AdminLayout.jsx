@@ -20,6 +20,9 @@ import SecretsGenerator from './pages/SecretsGenerator';
 import PoolWaitlist from './pages/PoolWaitlist';
 import WebhooksStatus from './pages/WebhooksStatus';
 import DataWiring from './pages/DataWiring';
+import TelegramPage from './pages/Telegram';
+import PoolPage from './pages/Pool';
+import SystemSettings from './pages/SystemSettings';
 import { Menu, Loader2 } from 'lucide-react';
 
 function AdminHeader({ onMenuToggle }) {
@@ -80,7 +83,9 @@ export default function AdminLayout() {
               <>
                 <Route path="revenue" element={<Revenue />} />
                 <Route path="notifications" element={<Notifications />} />
+                <Route path="telegram" element={<TelegramPage />} />
                 <Route path="settings" element={<AdminSettings />} />
+                <Route path="settings/system" element={<SystemSettings />} />
               </>
             )}
             {role === 'super_admin' && (
@@ -89,6 +94,7 @@ export default function AdminLayout() {
                 <Route path="settings/secrets" element={<SecretsGenerator />} />
                 <Route path="webhooks" element={<WebhooksStatus />} />
                 <Route path="data-wiring" element={<DataWiring />} />
+                <Route path="pool" element={<PoolPage />} />
               </>
             )}
             <Route path="*" element={<Navigate to="" replace />} />

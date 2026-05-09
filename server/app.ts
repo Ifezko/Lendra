@@ -1,7 +1,7 @@
 import Fastify, { FastifyInstance } from 'fastify';
 import cors from '@fastify/cors';
 import { Redis } from '@upstash/redis';
-import { randomUUID, getRandomValues, createHash } from 'crypto';
+import { randomUUID, getRandomValues, createHash, scryptSync, randomBytes, timingSafeEqual } from 'crypto';
 
 // ── Environment ──────────────────────────────────────────────────────
 
@@ -83,7 +83,35 @@ async function sendTG(chatId: string, text: string): Promise<boolean> {
   } catch { return false; }
 }
 
-// ── Admin auth helper ────────────────────────────────────────────────
+// ── Admin auth helpers ───────────────────────────────────────────────
+
+const ADMIN_EMAIL_ENV = process.env.ADMIN_EMAIL || '';
+const ADMIN_PASSWORD_ENV = process.env.ADMIN_PASSWORD || '';
+const ADMIN_PASSWORD_HASH_ENV = process.env.ADMIN_PASSWORD_HASH || '';
+
+function hashPassword(password: string): string {
+  const salt = randomBytes(16).toString('hex');
+  const hash = scryptSync(password, salt, 64).toString('hex');
+  return `scrypt:${salt}:${hash}`;
+}
+
+function checkPassword(password: string, stored: string): boolean {
+  if (!stored) return false;
+  if (stored.startsWith('scrypt:')) {
+    const parts = stored.split(':');
+    if (parts.length !== 3) return false;
+    const [, salt, hash] = parts;
+    const hashBuf = Buffer.from(hash, 'hex');
+    const derivedBuf = scryptSync(password, salt, 64);
+    if (hashBuf.length !== derivedBuf.length) return false;
+    return timingSafeEqual(hashBuf, derivedBuf);
+  }
+  return false;
+}
+
+function hashSessionToken(token: string): string {
+  return createHash('sha256').update(token).digest('hex');
+}
 
 function genSessionToken(): string {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
@@ -94,15 +122,61 @@ function genSessionToken(): string {
   return t;
 }
 
-async function verifyAdmin(req: any, reply: any): Promise<{ email: string; role: string } | null> {
+async function verifyAdmin(req: any, reply: any): Promise<{ id: string; email: string; role: string; display_name?: string } | null> {
   const ah = req.headers.authorization;
-  if (!ah || !ah.startsWith('Bearer ')) { reply.code(401).send({ error: 'Missing authorization token' }); return null; }
+  if (!ah || !ah.startsWith('Bearer ')) {
+    reply.code(401).send({ error: 'Missing authorization token' });
+    return null;
+  }
   const token = ah.slice(7);
-  const s = await redis.get<string>(`admin_session:${token}`);
-  if (s) return typeof s === 'string' ? JSON.parse(s) : s;
-  if (token.length > 10) return { email: 'admin@lendra.io', role: 'super_admin' };
+  const tokenHash = hashSessionToken(token);
+
+  // Check Redis cache first (fast path)
+  try {
+    const cached = await redis.get<string>(`admin_session_v2:${tokenHash}`);
+    if (cached) {
+      const parsed = typeof cached === 'string' ? JSON.parse(cached) : cached;
+      if (parsed?.id && parsed?.email && parsed?.role) return parsed;
+    }
+  } catch {}
+
+  // Check Supabase admin_sessions (authoritative)
+  try {
+    const sessions = await sbSelect('admin_sessions', `select=id,admin_user_id,revoked,expires_at&session_token_hash=eq.${tokenHash}&revoked=eq.false&limit=1`);
+    const session = sessions?.[0];
+    if (session) {
+      if (session.expires_at && new Date(session.expires_at) < new Date()) {
+        reply.code(401).send({ error: 'Session expired' });
+        return null;
+      }
+      const admins = await sbSelect('admin_users', `select=id,email,role,display_name,status&id=eq.${session.admin_user_id}&limit=1`);
+      const admin = admins?.[0];
+      if (admin && admin.status === 'active') {
+        const result = { id: admin.id, email: admin.email, role: admin.role, display_name: admin.display_name };
+        // Cache for 1 hour
+        try { await redis.set(`admin_session_v2:${tokenHash}`, JSON.stringify(result), { ex: 3600 }); } catch {}
+        return result;
+      }
+    }
+  } catch (err: any) {
+    console.error('[verifyAdmin] DB check failed:', err.message);
+  }
+
   reply.code(401).send({ error: 'Invalid or expired session' });
   return null;
+}
+
+async function auditLog(adminId: string | null, action: string, metadata: any = {}, targetAdminId?: string) {
+  try {
+    await sbInsert('admin_audit_logs', {
+      actor_admin_id: adminId,
+      action,
+      target_admin_id: targetAdminId || null,
+      metadata: typeof metadata === 'object' ? metadata : { detail: metadata },
+    });
+  } catch (err: any) {
+    console.error('[auditLog] Failed:', err.message);
+  }
 }
 
 // ── PKCE helpers ─────────────────────────────────────────────────────
@@ -571,7 +645,7 @@ export async function buildApp(): Promise<FastifyInstance> {
 
   // ── NOTIFICATIONS ────────────────────────────────────────────────
   app.get('/api/notifications/preferences', async (req, reply) => {
-    const wallet = (req.query as any)?.wallet;
+    const wallet = (req.query as any)?.wallet || (req.query as any)?.wallet_address;
     if (!wallet) return reply.code(400).send({ ok: false, error: 'wallet required' });
     try {
       const rows = await sbSelect('wallet_profiles', `select=telegram_alerts_enabled,telegram_score_alerts_enabled,telegram_loan_alerts_enabled,telegram_bond_alerts_enabled,telegram_repayment_alerts_enabled,telegram_level_alerts_enabled&wallet_address=eq.${wallet}&limit=1`);
@@ -594,7 +668,7 @@ export async function buildApp(): Promise<FastifyInstance> {
 
   // ── X (TWITTER) OAUTH ────────────────────────────────────────────
   app.get('/api/auth/x/start', async (req, reply) => {
-    const wallet = (req.query as any)?.wallet;
+    const wallet = (req.query as any)?.wallet || (req.query as any)?.wallet_address;
     if (!wallet) return reply.code(400).send({ ok: false, error: 'wallet required' });
     if (!X_CLIENT_ID) return reply.code(500).send({ ok: false, error: 'X OAuth not configured' });
     const state = genSecureCode(32);
@@ -637,7 +711,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   });
 
   app.get('/api/auth/x/status', async (req, reply) => {
-    const wallet = (req.query as any)?.wallet;
+    const wallet = (req.query as any)?.wallet || (req.query as any)?.wallet_address;
     if (!wallet) return { ok: false, reason: 'wallet_required' };
     try {
       const rows = await sbSelect('wallet_profiles', `select=x_connected,x_username,x_user_id,x_account_age_days,x_posts_count,x_verification_score&wallet_address=eq.${wallet}&limit=1`);
@@ -793,6 +867,60 @@ export async function buildApp(): Promise<FastifyInstance> {
     return { ok: true, tables: statuses };
   });
 
+  // ── ADMIN TELEGRAM ────────────────────────────────────────────
+  app.get('/api/admin/telegram', async (req, reply) => {
+    const admin = await verifyAdmin(req, reply);
+    if (!admin) return;
+    let connectedWallets: any[] = [];
+    let recentEvents: any[] = [];
+    try { connectedWallets = (await sbSelect('wallet_profiles', 'select=wallet_address,telegram_username,telegram_chat_id,telegram_alerts_enabled,telegram_connected_at&telegram_chat_id=not.is.null&limit=200')) || []; } catch {}
+    try { recentEvents = (await sbSelect('notification_events', 'select=id,channel,event_type,status,metadata,created_at&channel=eq.telegram&order=created_at.desc&limit=50')) || []; } catch {}
+    return { connectedWallets, recentEvents };
+  });
+
+  // ── ADMIN POOL ──────────────────────────────────────────────
+  app.get('/api/admin/pool', async (req, reply) => {
+    const admin = await verifyAdmin(req, reply);
+    if (!admin) return;
+    let pool: any = { pool_live: false, pool_paused: false, pool_mode: 'simulation', available_liquidity: 0 };
+    try {
+      const cached = await redis.get<string>('pool_state');
+      if (cached) pool = typeof cached === 'string' ? JSON.parse(cached) : cached;
+    } catch {}
+    return { pool };
+  });
+
+  app.patch('/api/admin/pool', async (req, reply) => {
+    const admin = await verifyAdmin(req, reply);
+    if (!admin) return;
+    if (admin.role !== 'super_admin') return reply.code(403).send({ ok: false, error: 'super_admin required' });
+    const updates = req.body as Record<string, any>;
+    try {
+      let pool: any = { pool_live: false, pool_paused: false, pool_mode: 'simulation', available_liquidity: 0 };
+      const cached = await redis.get<string>('pool_state');
+      if (cached) pool = typeof cached === 'string' ? JSON.parse(cached) : cached;
+      Object.assign(pool, updates);
+      await redis.set('pool_state', JSON.stringify(pool));
+      await auditLog(null, 'pool_updated', { ...updates, triggered_by: admin.email });
+      return { ok: true, pool };
+    } catch (e: any) { return reply.code(500).send({ ok: false, error: e.message }); }
+  });
+
+  // ── ADMIN SYSTEM STATUS ─────────────────────────────────────
+  app.get('/api/admin/system', async (req, reply) => {
+    const admin = await verifyAdmin(req, reply);
+    if (!admin) return;
+    const status: any = {};
+    status.supabase = { configured: !!(process.env.VITE_SUPABASE_URL && process.env.VITE_SUPABASE_ANON_KEY) };
+    status.service_role = { configured: !!process.env.SUPABASE_SERVICE_ROLE_KEY };
+    status.redis = { configured: !!(process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN), connected: false };
+    try { await redis.ping(); status.redis.connected = true; } catch {}
+    status.telegram = { configured: !!process.env.TELEGRAM_BOT_TOKEN, bot_username: process.env.TELEGRAM_BOT_USERNAME || null };
+    status.x_oauth = { configured: !!(process.env.X_CLIENT_ID && process.env.X_CLIENT_SECRET) };
+    status.quicknode = { configured: !!process.env.QUICKNODE_ENDPOINT, webhook_configured: !!process.env.QUICKNODE_WEBHOOK_SECRET };
+    return status;
+  });
+
   app.post('/api/admin/test/:system', async (req, reply) => {
     const admin = await verifyAdmin(req, reply);
     if (!admin) return;
@@ -864,32 +992,112 @@ export async function buildApp(): Promise<FastifyInstance> {
     return { repaid: true, loan, isOnTime, scoreBonus, totalScoreAdjustment: ca + scoreBonus };
   });
 
-  // ── ADMIN AUTH ───────────────────────────────────────────────────
-  const ADMIN_USERS: Record<string, { email: string; role: string; passwordHash: string }> = {
-    'admin@lendra.io': { email: 'admin@lendra.io', role: 'super_admin', passwordHash: 'lendra_admin_2024' },
-  };
+  // ── ADMIN AUTH (Supabase-backed with bootstrap) ─────────────────
 
-  app.post('/api/admin/login', async (req, reply) => {
-    const { email, password } = req.body as { email: string; password: string };
-    const user = ADMIN_USERS[email];
-    if (!user || user.passwordHash !== password) return reply.code(401).send({ error: 'Invalid email or password' });
+  async function createAdminSession(adminId: string, adminEmail: string, adminRole: string, adminDisplayName?: string) {
     const token = genSessionToken();
-    await redis.set(`admin_session:${token}`, JSON.stringify({ email: user.email, role: user.role, createdAt: Date.now() }), { ex: 86400 });
-    return { token, admin: { email: user.email, role: user.role } };
+    const tokenHash = hashSessionToken(token);
+    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+    await sbInsert('admin_sessions', { admin_user_id: adminId, session_token_hash: tokenHash, expires_at: expiresAt });
+    const cached = { id: adminId, email: adminEmail, role: adminRole, display_name: adminDisplayName || null };
+    try { await redis.set(`admin_session_v2:${tokenHash}`, JSON.stringify(cached), { ex: 86400 }); } catch {}
+    return token;
+  }
+
+  app.post('/api/admin/auth/login', async (req, reply) => {
+    const { email, password } = req.body as { email: string; password: string };
+    if (!email || !password) return reply.code(400).send({ error: 'Email and password required' });
+    const ip = req.ip || 'unknown';
+    try {
+      const allAdmins = await sbSelect('admin_users', 'select=id&limit=1');
+      const isBootstrap = !allAdmins || allAdmins.length === 0;
+
+      if (isBootstrap) {
+        if (!ADMIN_EMAIL_ENV) return reply.code(403).send({ error: 'ADMIN_EMAIL not configured for bootstrap' });
+        if (email !== ADMIN_EMAIL_ENV) {
+          try { await sbInsert('admin_login_attempts', { email, ip_address: ip, success: false, failure_reason: 'bootstrap_email_mismatch' }); } catch {}
+          return reply.code(401).send({ error: 'Invalid credentials' });
+        }
+        let pwValid = false;
+        if (ADMIN_PASSWORD_HASH_ENV) { pwValid = checkPassword(password, ADMIN_PASSWORD_HASH_ENV); }
+        else if (ADMIN_PASSWORD_ENV) { pwValid = password === ADMIN_PASSWORD_ENV; }
+        if (!pwValid) {
+          try { await sbInsert('admin_login_attempts', { email, ip_address: ip, success: false, failure_reason: 'bootstrap_bad_password' }); } catch {}
+          return reply.code(401).send({ error: 'Invalid credentials' });
+        }
+        const hashedPw = hashPassword(password);
+        const result = await sbInsert('admin_users', { email, password_hash: hashedPw, role: 'super_admin', status: 'active' });
+        const newAdmin = result?.[0];
+        if (!newAdmin) return reply.code(500).send({ error: 'Failed to create admin' });
+        await auditLog(newAdmin.id, 'super_admin_bootstrapped', { email, ip_address: ip });
+        const token = await createAdminSession(newAdmin.id, newAdmin.email, 'super_admin');
+        try { await sbInsert('admin_login_attempts', { email, ip_address: ip, success: true }); } catch {}
+        return { ok: true, token, admin: { id: newAdmin.id, email: newAdmin.email, role: 'super_admin', display_name: null } };
+      }
+
+      // Normal login
+      const admins = await sbSelect('admin_users', `select=id,email,password_hash,role,display_name,status&email=eq.${encodeURIComponent(email)}&limit=1`);
+      const admin = admins?.[0];
+      if (!admin) {
+        try { await sbInsert('admin_login_attempts', { email, ip_address: ip, success: false, failure_reason: 'user_not_found' }); } catch {}
+        return reply.code(401).send({ error: 'Invalid credentials' });
+      }
+      if (admin.status !== 'active') {
+        try { await sbInsert('admin_login_attempts', { email, ip_address: ip, success: false, failure_reason: 'account_inactive' }); } catch {}
+        return reply.code(403).send({ error: 'Account is not active' });
+      }
+      if (!checkPassword(password, admin.password_hash)) {
+        try { await sbInsert('admin_login_attempts', { email, ip_address: ip, success: false, failure_reason: 'bad_password' }); } catch {}
+        await auditLog(admin.id, 'admin_login_failed', { ip_address: ip, reason: 'bad_password' });
+        return reply.code(401).send({ error: 'Invalid credentials' });
+      }
+      const token = await createAdminSession(admin.id, admin.email, admin.role, admin.display_name);
+      try { await sbInsert('admin_login_attempts', { email, ip_address: ip, success: true }); } catch {}
+      try { await sbUpdate('admin_users', { last_login_at: new Date().toISOString() }, `id=eq.${admin.id}`); } catch {}
+      await auditLog(admin.id, 'admin_login_success', { ip_address: ip });
+      return { ok: true, token, admin: { id: admin.id, email: admin.email, role: admin.role, display_name: admin.display_name } };
+    } catch (err: any) {
+      console.error('[admin/login] Error:', err.message);
+      return reply.code(500).send({ error: 'Login failed: ' + err.message });
+    }
+  });
+
+  // Legacy alias
+  app.post('/api/admin/login', async (req, reply) => {
+    return (app as any).inject({ method: 'POST', url: '/api/admin/auth/login', payload: req.body, headers: req.headers });
+  });
+
+  app.get('/api/admin/auth/me', async (req, reply) => {
+    const admin = await verifyAdmin(req, reply);
+    if (!admin) return;
+    return { email: admin.email, role: admin.role, display_name: admin.display_name };
   });
 
   app.get('/api/admin/me', async (req, reply) => {
-    const ah = req.headers.authorization;
-    if (!ah?.startsWith('Bearer ')) return reply.code(401).send({ error: 'Unauthorized' });
-    const s = await redis.get<string>(`admin_session:${ah.slice(7)}`);
-    if (!s) return reply.code(401).send({ error: 'Session expired' });
-    const p = typeof s === 'string' ? JSON.parse(s) : s;
-    return { email: p.email, role: p.role };
+    const admin = await verifyAdmin(req, reply);
+    if (!admin) return;
+    return { email: admin.email, role: admin.role, display_name: admin.display_name };
   });
 
-  app.post('/api/admin/logout', async (req) => {
+  app.post('/api/admin/auth/logout', async (req, reply) => {
     const ah = req.headers.authorization;
-    if (ah?.startsWith('Bearer ')) await redis.del(`admin_session:${ah.slice(7)}`);
+    if (ah?.startsWith('Bearer ')) {
+      const token = ah.slice(7);
+      const tokenHash = hashSessionToken(token);
+      try { await sbUpdate('admin_sessions', { revoked: true, revoked_at: new Date().toISOString() }, `session_token_hash=eq.${tokenHash}`); } catch {}
+      try { await redis.del(`admin_session_v2:${tokenHash}`); } catch {}
+    }
+    return { ok: true };
+  });
+
+  app.post('/api/admin/logout', async (req, reply) => {
+    const ah = req.headers.authorization;
+    if (ah?.startsWith('Bearer ')) {
+      const token = ah.slice(7);
+      const tokenHash = hashSessionToken(token);
+      try { await sbUpdate('admin_sessions', { revoked: true, revoked_at: new Date().toISOString() }, `session_token_hash=eq.${tokenHash}`); } catch {}
+      try { await redis.del(`admin_session_v2:${tokenHash}`); } catch {}
+    }
     return { ok: true };
   });
 
@@ -935,6 +1143,234 @@ export async function buildApp(): Promise<FastifyInstance> {
     const { wallet } = req.params as { wallet: string };
     const h = (await redis.get<string>(`loan_history:${wallet}`)) || '[]';
     return typeof h === 'string' ? JSON.parse(h) : h;
+  });
+
+  // ── ADMIN DATA ROUTES ──────────────────────────────────────────────
+
+  app.get('/api/admin/stats', async (req, reply) => {
+    const admin = await verifyAdmin(req, reply); if (!admin) return;
+    try {
+      const rows = await sbSelect('view_admin_overview_metrics', 'limit=1');
+      const m = rows?.[0] || {};
+      return { totalWallets: m.unique_wallets || 0, activeLoans: m.active_loans || 0, totalBonds: m.total_bond_volume || 0, totalRevenue: 0, avgScore: Math.round(m.average_score || 0), eligibleWallets: m.eligible_wallets || 0, repaymentRate: m.total_repayments > 0 ? 100 : 0, defaultRate: 0, telegramConnected: m.telegram_connected_wallets || 0, xVerified: m.x_connected_wallets || 0, solIdentities: 0, socialCards: m.credit_cards_generated || 0 };
+    } catch (e: any) { return reply.code(500).send({ error: e.message }); }
+  });
+
+  app.get('/api/admin/wallets', async (req, reply) => {
+    const admin = await verifyAdmin(req, reply); if (!admin) return;
+    try {
+      const scans = await sbSelect('wallet_scans', 'select=wallet_address,score,loan_level,eligible,portfolio_value_usd,created_at&order=created_at.desc&limit=500');
+      const seen = new Set<string>(); const wallets: any[] = [];
+      for (const s of (scans || [])) {
+        if (!seen.has(s.wallet_address)) { seen.add(s.wallet_address); wallets.push({ address: s.wallet_address, score: s.score || 0, level: s.loan_level || 0, balance: s.portfolio_value_usd != null ? Number(s.portfolio_value_usd).toFixed(2) : null, hasActiveLoan: false, firstSeen: s.created_at }); }
+      }
+      return wallets;
+    } catch (e: any) { return reply.code(500).send({ error: e.message }); }
+  });
+
+  app.get('/api/admin/loans', async (req, reply) => {
+    const admin = await verifyAdmin(req, reply); if (!admin) return;
+    try {
+      const rows = await sbSelect('loan_events', 'select=id,wallet_address,loan_amount,loan_level,level_name,status,created_at&order=created_at.desc&limit=200');
+      return (rows || []).map((r: any) => ({ id: r.id, wallet: r.wallet_address, amount: r.loan_amount || 0, level: r.loan_level || 0, status: r.status || 'pending', dueDate: null, createdAt: r.created_at }));
+    } catch (e: any) { return reply.code(500).send({ error: e.message }); }
+  });
+
+  app.get('/api/admin/analytics', async (req, reply) => {
+    const admin = await verifyAdmin(req, reply); if (!admin) return;
+    try {
+      const allScans = await sbSelect('wallet_scans', 'select=score&limit=1000');
+      const scores = (allScans || []).map((s: any) => s.score || 0);
+      const dist = [scores.filter((s: number) => s >= 800).length, scores.filter((s: number) => s >= 600 && s < 800).length, scores.filter((s: number) => s >= 400 && s < 600).length, scores.filter((s: number) => s >= 200 && s < 400).length, scores.filter((s: number) => s < 200).length];
+      return { walletGrowth: { current: scores.length, previous: 0 }, loanVolume: { current: 0, previous: 0 }, activeUsers: { current: scores.length, previous: 0 }, avgSession: { current: 0, previous: 0 }, scoreBreakdown: dist, topActions: [], dailyLoans: [], retentionRate: 0, bounceRate: 0 };
+    } catch (e: any) { return reply.code(500).send({ error: e.message }); }
+  });
+
+  app.get('/api/admin/bonds', async (req, reply) => {
+    const admin = await verifyAdmin(req, reply); if (!admin) return;
+    try {
+      const rows = await sbSelect('bond_events', 'select=id,wallet_address,event_type,status,metadata,created_at&order=created_at.desc&limit=200');
+      return (rows || []).map((r: any) => ({ id: r.id, wallet: r.wallet_address, amount: r.metadata?.amount || 0, status: r.status || 'locked', lockDays: 30, createdAt: r.created_at }));
+    } catch (e: any) { return reply.code(500).send({ error: e.message }); }
+  });
+
+  app.get('/api/admin/revenue', async (req, reply) => {
+    const admin = await verifyAdmin(req, reply); if (!admin) return;
+    try { return { totalRevenue: 0, interestEarned: 0, bondFees: 0, partnerFees: 0, serviceFees: 0, monthly: [], projectedAnnual: 0 }; }
+    catch (e: any) { return reply.code(500).send({ error: e.message }); }
+  });
+
+  app.get('/api/admin/partners', async (req, reply) => {
+    const admin = await verifyAdmin(req, reply); if (!admin) return;
+    try {
+      const rows = await sbSelect('partner_events', 'select=partner,event_type,created_at&order=created_at.desc&limit=200');
+      const pm = new Map<string, any>();
+      for (const r of (rows || [])) { if (!pm.has(r.partner)) pm.set(r.partner, { id: r.partner, name: r.partner, type: 'Integration', volume: 0, status: 'active', eventCount: 0 }); pm.get(r.partner).eventCount++; }
+      return Array.from(pm.values());
+    } catch (e: any) { return reply.code(500).send({ error: e.message }); }
+  });
+
+  app.get('/api/admin/qvac', async (req, reply) => {
+    const admin = await verifyAdmin(req, reply); if (!admin) return;
+    try {
+      const overview = await sbSelect('view_admin_overview_metrics', 'limit=1');
+      const m = overview?.[0] || {};
+      return { totalScored: m.unique_wallets || 0, avgScore: Math.round(m.average_score || 0), lastRun: null, modelVersion: '1.0.0' };
+    } catch (e: any) { return reply.code(500).send({ error: e.message }); }
+  });
+
+  app.get('/api/admin/social-cards', async (req, reply) => {
+    const admin = await verifyAdmin(req, reply); if (!admin) return;
+    try {
+      const rows = await sbSelect('social_credit_cards', 'select=id,wallet_address,score,shared_to_x,created_at&order=created_at.desc&limit=200');
+      return (rows || []).map((r: any) => ({ id: r.id, wallet: r.wallet_address, score: r.score || 0, shared: r.shared_to_x || false, impressions: 0 }));
+    } catch (e: any) { return reply.code(500).send({ error: e.message }); }
+  });
+
+  app.get('/api/admin/x-verifications', async (req, reply) => {
+    const admin = await verifyAdmin(req, reply); if (!admin) return;
+    try {
+      const rows = await sbSelect('x_verification_events', 'select=id,wallet_address,x_user_id,event_type,status,points_awarded,metadata,created_at&order=created_at.desc&limit=200');
+      return (rows || []).map((r: any) => ({ id: r.id, handle: r.metadata?.x_username || r.x_user_id || 'unknown', wallet: r.wallet_address, status: r.status === 'success' ? 'verified' : r.status || 'pending', scoreBoost: r.points_awarded || 0, requestedAt: r.created_at }));
+    } catch (e: any) { return reply.code(500).send({ error: e.message }); }
+  });
+
+  app.get('/api/admin/notifications', async (req, reply) => {
+    const admin = await verifyAdmin(req, reply); if (!admin) return;
+    try {
+      const rows = await sbSelect('notification_events', 'select=id,wallet_address,channel,event_type,status,message,created_at&order=created_at.desc&limit=200');
+      return (rows || []).map((r: any) => ({ id: r.id, title: r.event_type, body: r.message || '', channel: r.channel, audience: 'individual', sentAt: r.created_at, recipientCount: 1 }));
+    } catch (e: any) { return reply.code(500).send({ error: e.message }); }
+  });
+
+  app.post('/api/admin/notifications/send', async (req, reply) => {
+    const admin = await verifyAdmin(req, reply); if (!admin) return;
+    if (!['super_admin', 'admin'].includes(admin.role)) return reply.code(403).send({ error: 'Insufficient permissions' });
+    const { channel, audience, title, body } = req.body as any;
+    try {
+      const targets = await sbSelect('wallet_profiles', 'select=wallet_address,telegram_chat_id,telegram_connected&telegram_connected=eq.true&limit=500');
+      let sent = 0;
+      if (channel === 'telegram' || channel === 'both') {
+        for (const t of (targets || [])) { if (t.telegram_chat_id) { const ok = await sendTG(t.telegram_chat_id, `${title}\n\n${body}`); if (ok) sent++; } }
+      }
+      await auditLog(admin.id, 'notification_sent', { channel, audience, title, sent, total: (targets || []).length });
+      return { ok: true, sent, total: (targets || []).length };
+    } catch (e: any) { return reply.code(500).send({ error: e.message }); }
+  });
+
+  app.get('/api/admin/admins', async (req, reply) => {
+    const admin = await verifyAdmin(req, reply); if (!admin) return;
+    if (admin.role !== 'super_admin') return reply.code(403).send({ error: 'super_admin required' });
+    try {
+      const rows = await sbSelect('admin_users', 'select=id,email,display_name,role,status,last_login_at,created_at&order=created_at.asc');
+      return rows || [];
+    } catch (e: any) { return reply.code(500).send({ error: e.message }); }
+  });
+
+  app.post('/api/admin/admins', async (req, reply) => {
+    const admin = await verifyAdmin(req, reply); if (!admin) return;
+    if (admin.role !== 'super_admin') return reply.code(403).send({ error: 'super_admin required' });
+    const { email, password, display_name, role } = req.body as any;
+    if (!email || !password) return reply.code(400).send({ error: 'email and password required' });
+    try {
+      const existing = await sbSelect('admin_users', `select=id&email=eq.${encodeURIComponent(email)}&limit=1`);
+      if (existing?.length) return reply.code(409).send({ error: 'Admin already exists' });
+      const result = await sbInsert('admin_users', { email, password_hash: hashPassword(password), display_name: display_name || null, role: role || 'viewer', status: 'active' });
+      await auditLog(admin.id, 'admin_created', { email, role: role || 'viewer' }, result?.[0]?.id);
+      return { ok: true, admin: result?.[0] };
+    } catch (e: any) { return reply.code(500).send({ error: e.message }); }
+  });
+
+  app.patch('/api/admin/admins/:id', async (req, reply) => {
+    const admin = await verifyAdmin(req, reply); if (!admin) return;
+    if (admin.role !== 'super_admin') return reply.code(403).send({ error: 'super_admin required' });
+    const { id } = req.params as { id: string };
+    const { role, status, display_name } = req.body as any;
+    const upd: any = { updated_at: new Date().toISOString() };
+    if (role) upd.role = role; if (status) upd.status = status; if (display_name !== undefined) upd.display_name = display_name;
+    try { await sbUpdate('admin_users', upd, `id=eq.${id}`); await auditLog(admin.id, 'admin_updated', upd, id); return { ok: true }; }
+    catch (e: any) { return reply.code(500).send({ error: e.message }); }
+  });
+
+  app.delete('/api/admin/admins/:id', async (req, reply) => {
+    const admin = await verifyAdmin(req, reply); if (!admin) return;
+    if (admin.role !== 'super_admin') return reply.code(403).send({ error: 'super_admin required' });
+    const { id } = req.params as { id: string };
+    if (id === admin.id) return reply.code(400).send({ error: 'Cannot delete yourself' });
+    try {
+      await sbUpdate('admin_users', { status: 'disabled' }, `id=eq.${id}`);
+      await sbUpdate('admin_sessions', { revoked: true, revoked_at: new Date().toISOString() }, `admin_user_id=eq.${id}&revoked=eq.false`);
+      await auditLog(admin.id, 'admin_removed', {}, id);
+      return { ok: true };
+    } catch (e: any) { return reply.code(500).send({ error: e.message }); }
+  });
+
+  app.get('/api/admin/settings', async (req, reply) => {
+    const admin = await verifyAdmin(req, reply); if (!admin) return;
+    try {
+      const rows = await sbSelect('app_settings', 'select=setting_key,setting_value&limit=100');
+      const settings: any = {};
+      for (const r of (rows || [])) settings[r.setting_key] = r.setting_value;
+      return settings;
+    } catch (e: any) { return reply.code(500).send({ error: e.message }); }
+  });
+
+  app.put('/api/admin/settings', async (req, reply) => {
+    const admin = await verifyAdmin(req, reply); if (!admin) return;
+    if (!['super_admin', 'admin'].includes(admin.role)) return reply.code(403).send({ error: 'Insufficient permissions' });
+    const settings = req.body as Record<string, any>;
+    try {
+      for (const [key, value] of Object.entries(settings)) {
+        const existing = await sbSelect('app_settings', `select=id&setting_key=eq.${encodeURIComponent(key)}&limit=1`);
+        if (existing?.length) { await sbUpdate('app_settings', { setting_value: value, updated_by: admin.id, updated_at: new Date().toISOString() }, `setting_key=eq.${encodeURIComponent(key)}`); }
+        else { await sbInsert('app_settings', { setting_key: key, setting_value: value, updated_by: admin.id }); }
+      }
+      await auditLog(admin.id, 'settings_updated', { keys: Object.keys(settings) });
+      return { ok: true };
+    } catch (e: any) { return reply.code(500).send({ error: e.message }); }
+  });
+
+  app.get('/api/admin/system', async (req, reply) => {
+    const admin = await verifyAdmin(req, reply); if (!admin) return;
+    const status: any = {};
+    status.supabase = { configured: supabaseConfigured };
+    status.redis = { configured: !!(redisUrl && redisToken) };
+    try { await redis.ping(); status.redis.connected = true; } catch { status.redis.connected = false; }
+    status.telegram = { configured: !!(TELEGRAM_BOT_TOKEN && TELEGRAM_WEBHOOK_SECRET), bot_username: TELEGRAM_BOT_USERNAME || null };
+    status.x_oauth = { configured: !!(X_CLIENT_ID && X_CLIENT_SECRET) };
+    status.quicknode = { configured: !!getQuicknodeHttpUrl(), webhook_configured: !!QUICKNODE_WEBHOOK_SECRET };
+    status.service_role = { configured: !!SUPABASE_SERVICE_KEY };
+    return { ok: true, ...status };
+  });
+
+  app.get('/api/admin/telegram', async (req, reply) => {
+    const admin = await verifyAdmin(req, reply); if (!admin) return;
+    try {
+      const profiles = await sbSelect('wallet_profiles', 'select=wallet_address,telegram_username,telegram_chat_id,telegram_connected,telegram_connected_at,telegram_alerts_enabled&telegram_connected=eq.true&order=telegram_connected_at.desc&limit=200');
+      const events = await sbSelect('notification_events', 'select=id,wallet_address,event_type,status,created_at&channel=eq.telegram&order=created_at.desc&limit=50');
+      return { ok: true, connectedWallets: profiles || [], recentEvents: events || [] };
+    } catch (e: any) { return reply.code(500).send({ error: e.message }); }
+  });
+
+  app.get('/api/admin/pool', async (req, reply) => {
+    const admin = await verifyAdmin(req, reply); if (!admin) return;
+    try {
+      const pool = await sbSelect('credit_pool_state', 'select=*&limit=1');
+      return { ok: true, pool: pool?.[0] || { pool_live: false, pool_paused: false, pool_mode: 'simulation', available_liquidity: 0 } };
+    } catch (e: any) { return reply.code(500).send({ error: e.message }); }
+  });
+
+  app.patch('/api/admin/pool', async (req, reply) => {
+    const admin = await verifyAdmin(req, reply); if (!admin) return;
+    if (admin.role !== 'super_admin') return reply.code(403).send({ error: 'super_admin required' });
+    const updates = req.body as any;
+    try {
+      const pool = await sbSelect('credit_pool_state', 'select=id&limit=1');
+      if (pool?.[0]) { await sbUpdate('credit_pool_state', { ...updates, updated_at: new Date().toISOString() }, `id=eq.${pool[0].id}`); }
+      else { await sbInsert('credit_pool_state', { ...updates, updated_at: new Date().toISOString() }); }
+      await auditLog(admin.id, 'pool_state_updated', updates);
+      return { ok: true };
+    } catch (e: any) { return reply.code(500).send({ error: e.message }); }
   });
 
   return app;

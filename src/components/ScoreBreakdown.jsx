@@ -24,7 +24,7 @@ export default function ScoreBreakdown({ breakdown, walletAgeDays, txCount, mont
     volume: `${txCount} txs`,
     consistency: `${monthlyActivity} mo`,
     diversity: `${protocolCount}`,
-    portfolio: `${balanceUsd.toFixed(0)}`,
+    portfolio: `$${balanceUsd.toFixed(0)}`,
     repayment: breakdown.repayment > 0 ? `+${breakdown.repayment}` : '—',
     xVerification: breakdown.xVerification > 0 ? 'Verified' : '—',
     crossChain: breakdown.crossChain > 0 ? `+${breakdown.crossChain}` : '—',

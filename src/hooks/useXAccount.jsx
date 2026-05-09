@@ -55,14 +55,14 @@ export function useXAccount() {
       const res = await fetch(url);
       if (res.ok) {
         const json = await res.json();
-        if (json.ok && json.connected) {
+        if (json.ok && (json.connected || json.x_connected)) {
           setConnected(true);
-          setUsername(json.username || null);
-          setUserId(json.user_id || null);
-          setAccountAgeDays(json.account_age_days || 0);
-          setPostsCount(json.posts_count || 0);
-          setVerificationScore(json.verification_score || 0);
-          setConnectedAt(json.connected_at || null);
+          setUsername(json.username || json.x_username || null);
+          setUserId(json.user_id || json.x_user_id || null);
+          setAccountAgeDays(json.account_age_days || json.x_account_age_days || 0);
+          setPostsCount(json.posts_count || json.x_posts_count || 0);
+          setVerificationScore(json.verification_score || json.x_verification_score || 0);
+          setConnectedAt(json.connected_at || json.x_connected_at || null);
         }
       }
     } catch (err) {

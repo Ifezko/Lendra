@@ -12,8 +12,8 @@ export default function WalletStats({ scoreData }) {
     { icon: Zap, label: 'Transactions', value: scoreData.txCount.toLocaleString(), color: '#81D4FF' },
     { icon: Calendar, label: 'Active Months', value: `${scoreData.monthlyActivity}`, color: '#7CFF81' },
     { icon: Layers, label: 'Protocols Used', value: `${scoreData.protocolCount}`, color: '#FFD881' },
-    { icon: Wallet, label: 'Portfolio', value: `${scoreData.balanceUsd.toFixed(2)}`, color: '#FF8181', sensitive: true },
-    { icon: Activity, label: '90d Spend', value: `${scoreData.spend90d.toFixed(2)}`, color: '#81FFD4', sensitive: true },
+    { icon: Wallet, label: 'Portfolio', value: `$${scoreData.balanceUsd.toFixed(2)}`, color: '#FF8181', sensitive: true },
+    { icon: Activity, label: '90d Spend', value: `$${scoreData.spend90d.toFixed(2)}`, color: '#81FFD4', sensitive: true },
   ];
 
   return (

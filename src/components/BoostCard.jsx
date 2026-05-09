@@ -1,8 +1,9 @@
 import React from 'react';
 import { motion } from 'framer-motion';
 import { Link } from 'react-router-dom';
-import { Sparkles, Globe, ArrowUpRight, RefreshCw, Award, Hash } from 'lucide-react';
+import { Sparkles, Globe, ArrowUpRight, RefreshCw, Award, Hash, CheckCircle } from 'lucide-react';
 import { SCORE_FACTORS } from '../hooks/useCreditScore';
+import { useXAccount } from '../hooks/useXAccount';
 
 function XIcon({ className }) {
   return (
@@ -31,7 +32,7 @@ const BOOSTS = [
     icon: XIcon,
     iconBg: 'bg-gray-700/30',
     iconColor: 'text-white',
-    action: { type: 'soon' },
+    action: { type: 'x_connect' },
   },
   {
     key: 'crossChain',
@@ -66,6 +67,9 @@ const BOOSTS = [
 ];
 
 export default function BoostCard() {
+  const xAccount = useXAccount();
+  const xIsConnected = xAccount.connected;
+
   return (
     <motion.div
       className="bg-brand-card rounded-2xl border border-brand-border p-6"
@@ -86,6 +90,9 @@ export default function BoostCard() {
       <div className="space-y-3">
         {BOOSTS.map((boost) => {
           const Icon = boost.icon;
+          const isXBoost = boost.action.type === 'x_connect';
+          const xDone = isXBoost && xIsConnected;
+
           const inner = (
             <>
               <div className={`w-10 h-10 rounded-lg ${boost.iconBg} flex items-center justify-center flex-shrink-0`}>
@@ -98,12 +105,16 @@ export default function BoostCard() {
                     +{boost.pts} pts
                   </span>
                 </div>
-                <p className="text-xs text-brand-muted mt-0.5">{boost.desc}</p>
+                <p className="text-xs text-brand-muted mt-0.5">
+                  {xDone ? `@${xAccount.username || 'verified'} connected (+${xAccount.verificationScore || 0} pts)` : boost.desc}
+                </p>
               </div>
               {boost.action.type === 'soon' ? (
                 <span className="text-xs font-medium text-brand-muted bg-brand-border px-2 py-0.5 rounded-full flex-shrink-0">
                   Coming soon
                 </span>
+              ) : xDone ? (
+                <CheckCircle className="w-4 h-4 text-green-400 flex-shrink-0" />
               ) : (
                 <ArrowUpRight className="w-4 h-4 text-brand-muted group-hover:text-brand-accent transition-colors flex-shrink-0" />
               )}
@@ -132,6 +143,27 @@ export default function BoostCard() {
               >
                 {inner}
               </a>
+            );
+          }
+          if (isXBoost) {
+            if (xDone) {
+              return (
+                <div
+                  key={boost.key}
+                  className="flex items-center gap-3 p-4 rounded-xl border border-green-500/20 bg-green-500/5 transition-all"
+                >
+                  {inner}
+                </div>
+              );
+            }
+            return (
+              <button
+                key={boost.key}
+                onClick={() => xAccount.startConnect()}
+                className="w-full flex items-center gap-3 p-4 rounded-xl border border-brand-border bg-brand-bg/30 hover:bg-brand-cardHover hover:border-brand-accent/30 transition-all group text-left"
+              >
+                {inner}
+              </button>
             );
           }
           return (

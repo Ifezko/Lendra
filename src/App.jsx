@@ -16,6 +16,7 @@ import SocialCreditCard from './components/SocialCreditCard';
 import LoadingState from './components/LoadingState';
 import AiDrawer from './components/AiDrawer';
 import AdminLayout from './admin/AdminLayout';
+import { AdminAuthProvider } from './admin/useAdminAuth';
 import { useCreditScore } from './hooks/useCreditScore';
 import { useLoan } from './hooks/useLoan';
 import { usePrivateMode } from './hooks/usePrivateMode';
@@ -315,15 +316,19 @@ function WalletContextProvider({ children }) {
   );
 }
 
+const ADMIN_SLUG = '/ops-okw-7qv3';
+
 function AppRouter() {
   const location = useLocation();
-  const isAdmin = location.pathname.startsWith('/admin');
+  const isAdmin = location.pathname.startsWith(ADMIN_SLUG);
 
   if (isAdmin) {
     return (
-      <Routes>
-        <Route path="/admin/*" element={<AdminLayout />} />
-      </Routes>
+      <AdminAuthProvider>
+        <Routes>
+          <Route path={`${ADMIN_SLUG}/*`} element={<AdminLayout />} />
+        </Routes>
+      </AdminAuthProvider>
     );
   }
 

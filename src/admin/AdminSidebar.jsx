@@ -5,7 +5,7 @@ import { useAdminAuth } from './useAdminAuth';
 import {
   LayoutDashboard, BarChart3, Wallet, ArrowDownToLine, Shield,
   DollarSign, Users, Brain, Bell, CreditCard, BadgeCheck, UserCog,
-  Settings, X, LogOut, Key, Rocket, Webhook, Database,
+  Settings, X, LogOut, Key, Rocket, Webhook, Database, MessageCircle, Landmark, Server,
 } from 'lucide-react';
 
 const SLUG = '/ops-okw-7qv3';
@@ -26,6 +26,7 @@ const NAV_SECTIONS = [
       { to: '/bonds', label: 'Bonds', icon: Shield, roles: ['super_admin', 'admin', 'analyst'] },
       { to: '/revenue', label: 'Revenue', icon: DollarSign, roles: ['super_admin', 'admin'] },
       { to: '/pool-waitlist', label: 'Pool Waitlist', icon: Rocket, roles: ['super_admin', 'admin', 'analyst'] },
+      { to: '/pool', label: 'Pool', icon: Landmark, roles: ['super_admin'] },
     ],
   },
   {
@@ -34,6 +35,7 @@ const NAV_SECTIONS = [
       { to: '/partners', label: 'Partners', icon: Users, roles: ['super_admin', 'admin', 'analyst'] },
       { to: '/qvac', label: 'QVAC', icon: Brain, roles: ['super_admin', 'admin', 'analyst'] },
       { to: '/notifications', label: 'Notifications', icon: Bell, roles: ['super_admin', 'admin'] },
+      { to: '/telegram', label: 'Telegram', icon: MessageCircle, roles: ['super_admin', 'admin'] },
       { to: '/social-cards', label: 'Social Cards', icon: CreditCard, roles: ['super_admin', 'admin', 'analyst'] },
       { to: '/x-verification', label: 'X Verification', icon: BadgeCheck, roles: ['super_admin', 'admin', 'analyst'] },
     ],
@@ -46,6 +48,7 @@ const NAV_SECTIONS = [
       { to: '/settings/secrets', label: 'Secrets', icon: Key, roles: ['super_admin'] },
       { to: '/webhooks', label: 'Webhooks', icon: Webhook, roles: ['super_admin'] },
       { to: '/data-wiring', label: 'Data Wiring', icon: Database, roles: ['super_admin'] },
+      { to: '/settings/system', label: 'System', icon: Server, roles: ['super_admin', 'admin'] },
     ],
   },
 ];

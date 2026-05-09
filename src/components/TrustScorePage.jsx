@@ -93,23 +93,18 @@ export default function TrustScorePage({ scoreData }) {
       expired: 'X authentication session expired. Please try again.',
       token_error: 'Failed to authenticate with X. Please try again.',
       profile_error: 'Failed to fetch your X profile. Please try again.',
+      failed: 'X connection failed. Please try again.',
     };
     const isSuccess = xStatus === 'connected';
     setXToast({ message: messages[xStatus] || `X status: ${xStatus}`, type: isSuccess ? 'success' : 'error' });
-    if (isSuccess && publicKey) xAccount.checkConnection(publicKey.toBase58());
+    if (isSuccess) xAccount.refresh();
     // Clean up URL params
     searchParams.delete('x');
+    searchParams.delete('stage');
     setSearchParams(searchParams, { replace: true });
     const timer = setTimeout(() => setXToast(null), 6000);
     return () => clearTimeout(timer);
   }, [searchParams]);
-
-  // Check X connection status on mount
-  useEffect(() => {
-    if (publicKey && connected) {
-      xAccount.checkConnection(publicKey.toBase58());
-    }
-  }, [publicKey, connected]);
 
   if (!connected) {
     return (
@@ -149,7 +144,7 @@ export default function TrustScorePage({ scoreData }) {
     SCORE_FACTORS.creditMaturity.max + SCORE_FACTORS.borrowGrowth.max;
   const trustPct = maxTrustPts > 0 ? Math.round((totalTrustPts / maxTrustPts) * 100) : 0;
 
-  const xIsActive = xAccount.isConnected || (breakdown.xVerification || 0) > 0;
+  const xIsActive = xAccount.connected || (breakdown.xVerification || 0) > 0;
   const xValueText = xIsActive
     ? `@${xAccount.username || 'verified'} connected (+${xAccount.verificationScore || breakdown.xVerification || 0} pts)`
     : 'Link your X account to prove social identity and earn up to +100 pts';
@@ -345,7 +340,7 @@ export default function TrustScorePage({ scoreData }) {
                         {xAccount.username && <span className="text-xs text-brand-muted">@{xAccount.username}</span>}
                       </div>
                       <button
-                        onClick={() => publicKey && xAccount.disconnect(publicKey.toBase58())}
+                        onClick={() => xAccount.disconnect()}
                         className="flex items-center gap-1 text-xs text-red-400/60 hover:text-red-400 transition-colors"
                       >
                         <Unlink className="w-3 h-3" /> Disconnect
@@ -353,7 +348,7 @@ export default function TrustScorePage({ scoreData }) {
                     </div>
                   ) : (
                     <button
-                      onClick={() => publicKey && xAccount.startAuth(publicKey.toBase58())}
+                      onClick={() => xAccount.startConnect()}
                       className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-brand-accent/10 border border-brand-accent/20 text-xs font-semibold text-brand-accent hover:bg-brand-accent/20 transition-colors"
                     >
                       <XIcon className="w-3.5 h-3.5" /> Connect X Account

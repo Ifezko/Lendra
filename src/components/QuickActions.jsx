@@ -13,6 +13,7 @@ import {
   Zap,
 } from 'lucide-react';
 import { useAppContext } from '../App';
+import { useXAccount } from '../hooks/useXAccount';
 
 const ACTIONS = [
   {
@@ -47,7 +48,8 @@ const ACTIONS = [
     key: 'x',
     label: 'Connect X',
     icon: BadgeCheck,
-    route: '/trust-score',
+    route: null,
+    action: 'x_connect',
     color: '#f59e0b',
   },
   {
@@ -77,10 +79,15 @@ const ACTIONS = [
 export default function QuickActions() {
   const ctx = useAppContext();
   const navigate = useNavigate();
+  const xAccount = useXAccount();
 
   const handleClick = (action) => {
     if (action.action === 'ai') {
       ctx?.openAiDrawer?.();
+      return;
+    }
+    if (action.action === 'x_connect') {
+      xAccount.startConnect();
       return;
     }
     if (action.route) {
