@@ -867,60 +867,6 @@ export async function buildApp(): Promise<FastifyInstance> {
     return { ok: true, tables: statuses };
   });
 
-  // ── ADMIN TELEGRAM ────────────────────────────────────────────
-  app.get('/api/admin/telegram', async (req, reply) => {
-    const admin = await verifyAdmin(req, reply);
-    if (!admin) return;
-    let connectedWallets: any[] = [];
-    let recentEvents: any[] = [];
-    try { connectedWallets = (await sbSelect('wallet_profiles', 'select=wallet_address,telegram_username,telegram_chat_id,telegram_alerts_enabled,telegram_connected_at&telegram_chat_id=not.is.null&limit=200')) || []; } catch {}
-    try { recentEvents = (await sbSelect('notification_events', 'select=id,channel,event_type,status,metadata,created_at&channel=eq.telegram&order=created_at.desc&limit=50')) || []; } catch {}
-    return { connectedWallets, recentEvents };
-  });
-
-  // ── ADMIN POOL ──────────────────────────────────────────────
-  app.get('/api/admin/pool', async (req, reply) => {
-    const admin = await verifyAdmin(req, reply);
-    if (!admin) return;
-    let pool: any = { pool_live: false, pool_paused: false, pool_mode: 'simulation', available_liquidity: 0 };
-    try {
-      const cached = await redis.get<string>('pool_state');
-      if (cached) pool = typeof cached === 'string' ? JSON.parse(cached) : cached;
-    } catch {}
-    return { pool };
-  });
-
-  app.patch('/api/admin/pool', async (req, reply) => {
-    const admin = await verifyAdmin(req, reply);
-    if (!admin) return;
-    if (admin.role !== 'super_admin') return reply.code(403).send({ ok: false, error: 'super_admin required' });
-    const updates = req.body as Record<string, any>;
-    try {
-      let pool: any = { pool_live: false, pool_paused: false, pool_mode: 'simulation', available_liquidity: 0 };
-      const cached = await redis.get<string>('pool_state');
-      if (cached) pool = typeof cached === 'string' ? JSON.parse(cached) : cached;
-      Object.assign(pool, updates);
-      await redis.set('pool_state', JSON.stringify(pool));
-      await auditLog(null, 'pool_updated', { ...updates, triggered_by: admin.email });
-      return { ok: true, pool };
-    } catch (e: any) { return reply.code(500).send({ ok: false, error: e.message }); }
-  });
-
-  // ── ADMIN SYSTEM STATUS ─────────────────────────────────────
-  app.get('/api/admin/system', async (req, reply) => {
-    const admin = await verifyAdmin(req, reply);
-    if (!admin) return;
-    const status: any = {};
-    status.supabase = { configured: !!(process.env.VITE_SUPABASE_URL && process.env.VITE_SUPABASE_ANON_KEY) };
-    status.service_role = { configured: !!process.env.SUPABASE_SERVICE_ROLE_KEY };
-    status.redis = { configured: !!(process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN), connected: false };
-    try { await redis.ping(); status.redis.connected = true; } catch {}
-    status.telegram = { configured: !!process.env.TELEGRAM_BOT_TOKEN, bot_username: process.env.TELEGRAM_BOT_USERNAME || null };
-    status.x_oauth = { configured: !!(process.env.X_CLIENT_ID && process.env.X_CLIENT_SECRET) };
-    status.quicknode = { configured: !!process.env.QUICKNODE_ENDPOINT, webhook_configured: !!process.env.QUICKNODE_WEBHOOK_SECRET };
-    return status;
-  });
-
   app.post('/api/admin/test/:system', async (req, reply) => {
     const admin = await verifyAdmin(req, reply);
     if (!admin) return;
@@ -1062,9 +1008,62 @@ export async function buildApp(): Promise<FastifyInstance> {
     }
   });
 
-  // Legacy alias
+  // Legacy alias — delegate directly to the auth/login handler
   app.post('/api/admin/login', async (req, reply) => {
-    return (app as any).inject({ method: 'POST', url: '/api/admin/auth/login', payload: req.body, headers: req.headers });
+    const { email, password } = req.body as any || {};
+    if (!email || !password) return reply.code(400).send({ error: 'Email and password required' });
+    const ip = req.ip || 'unknown';
+    try {
+      const allAdmins = await sbSelect('admin_users', 'select=id&limit=1');
+      const isBootstrap = !allAdmins || allAdmins.length === 0;
+
+      if (isBootstrap) {
+        if (!ADMIN_EMAIL_ENV) return reply.code(403).send({ error: 'ADMIN_EMAIL not configured for bootstrap' });
+        if (email !== ADMIN_EMAIL_ENV) {
+          try { await sbInsert('admin_login_attempts', { email, ip_address: ip, success: false, failure_reason: 'bootstrap_email_mismatch' }); } catch {}
+          return reply.code(401).send({ error: 'Invalid credentials' });
+        }
+        let pwValid = false;
+        if (ADMIN_PASSWORD_HASH_ENV) { pwValid = checkPassword(password, ADMIN_PASSWORD_HASH_ENV); }
+        else if (ADMIN_PASSWORD_ENV) { pwValid = password === ADMIN_PASSWORD_ENV; }
+        if (!pwValid) {
+          try { await sbInsert('admin_login_attempts', { email, ip_address: ip, success: false, failure_reason: 'bootstrap_bad_password' }); } catch {}
+          return reply.code(401).send({ error: 'Invalid credentials' });
+        }
+        const hashedPw = hashPassword(password);
+        const result = await sbInsert('admin_users', { email, password_hash: hashedPw, role: 'super_admin', status: 'active' });
+        const newAdmin = result?.[0];
+        if (!newAdmin) return reply.code(500).send({ error: 'Failed to create admin' });
+        await auditLog(newAdmin.id, 'super_admin_bootstrapped', { email, ip_address: ip });
+        const token = await createAdminSession(newAdmin.id, newAdmin.email, 'super_admin');
+        try { await sbInsert('admin_login_attempts', { email, ip_address: ip, success: true }); } catch {}
+        return { ok: true, token, admin: { id: newAdmin.id, email: newAdmin.email, role: 'super_admin', display_name: null } };
+      }
+
+      const admins = await sbSelect('admin_users', `select=id,email,password_hash,role,display_name,status&email=eq.${encodeURIComponent(email)}&limit=1`);
+      const admin = admins?.[0];
+      if (!admin) {
+        try { await sbInsert('admin_login_attempts', { email, ip_address: ip, success: false, failure_reason: 'user_not_found' }); } catch {}
+        return reply.code(401).send({ error: 'Invalid credentials' });
+      }
+      if (admin.status !== 'active') {
+        try { await sbInsert('admin_login_attempts', { email, ip_address: ip, success: false, failure_reason: 'account_inactive' }); } catch {}
+        return reply.code(403).send({ error: 'Account is not active' });
+      }
+      if (!checkPassword(password, admin.password_hash)) {
+        try { await sbInsert('admin_login_attempts', { email, ip_address: ip, success: false, failure_reason: 'bad_password' }); } catch {}
+        await auditLog(admin.id, 'admin_login_failed', { ip_address: ip, reason: 'bad_password' });
+        return reply.code(401).send({ error: 'Invalid credentials' });
+      }
+      const token = await createAdminSession(admin.id, admin.email, admin.role, admin.display_name);
+      try { await sbInsert('admin_login_attempts', { email, ip_address: ip, success: true }); } catch {}
+      try { await sbUpdate('admin_users', { last_login_at: new Date().toISOString() }, `id=eq.${admin.id}`); } catch {}
+      await auditLog(admin.id, 'admin_login_success', { ip_address: ip });
+      return { ok: true, token, admin: { id: admin.id, email: admin.email, role: admin.role, display_name: admin.display_name } };
+    } catch (err: any) {
+      console.error('[admin/login] Error:', err.message);
+      return reply.code(500).send({ error: 'Login failed: ' + err.message });
+    }
   });
 
   app.get('/api/admin/auth/me', async (req, reply) => {
@@ -1330,21 +1329,10 @@ export async function buildApp(): Promise<FastifyInstance> {
     } catch (e: any) { return reply.code(500).send({ error: e.message }); }
   });
 
-  app.get('/api/admin/system', async (req, reply) => {
-    const admin = await verifyAdmin(req, reply); if (!admin) return;
-    const status: any = {};
-    status.supabase = { configured: supabaseConfigured };
-    status.redis = { configured: !!(redisUrl && redisToken) };
-    try { await redis.ping(); status.redis.connected = true; } catch { status.redis.connected = false; }
-    status.telegram = { configured: !!(TELEGRAM_BOT_TOKEN && TELEGRAM_WEBHOOK_SECRET), bot_username: TELEGRAM_BOT_USERNAME || null };
-    status.x_oauth = { configured: !!(X_CLIENT_ID && X_CLIENT_SECRET) };
-    status.quicknode = { configured: !!getQuicknodeHttpUrl(), webhook_configured: !!QUICKNODE_WEBHOOK_SECRET };
-    status.service_role = { configured: !!SUPABASE_SERVICE_KEY };
-    return { ok: true, ...status };
-  });
-
+  // ── ADMIN TELEGRAM ────────────────────────────────────────────
   app.get('/api/admin/telegram', async (req, reply) => {
-    const admin = await verifyAdmin(req, reply); if (!admin) return;
+    const admin = await verifyAdmin(req, reply);
+    if (!admin) return;
     try {
       const profiles = await sbSelect('wallet_profiles', 'select=wallet_address,telegram_username,telegram_chat_id,telegram_connected,telegram_connected_at,telegram_alerts_enabled&telegram_connected=eq.true&order=telegram_connected_at.desc&limit=200');
       const events = await sbSelect('notification_events', 'select=id,wallet_address,event_type,status,created_at&channel=eq.telegram&order=created_at.desc&limit=50');
@@ -1352,8 +1340,10 @@ export async function buildApp(): Promise<FastifyInstance> {
     } catch (e: any) { return reply.code(500).send({ error: e.message }); }
   });
 
+  // ── ADMIN POOL ──────────────────────────────────────────────
   app.get('/api/admin/pool', async (req, reply) => {
-    const admin = await verifyAdmin(req, reply); if (!admin) return;
+    const admin = await verifyAdmin(req, reply);
+    if (!admin) return;
     try {
       const pool = await sbSelect('credit_pool_state', 'select=*&limit=1');
       return { ok: true, pool: pool?.[0] || { pool_live: false, pool_paused: false, pool_mode: 'simulation', available_liquidity: 0 } };
@@ -1361,7 +1351,8 @@ export async function buildApp(): Promise<FastifyInstance> {
   });
 
   app.patch('/api/admin/pool', async (req, reply) => {
-    const admin = await verifyAdmin(req, reply); if (!admin) return;
+    const admin = await verifyAdmin(req, reply);
+    if (!admin) return;
     if (admin.role !== 'super_admin') return reply.code(403).send({ error: 'super_admin required' });
     const updates = req.body as any;
     try {
@@ -1371,6 +1362,21 @@ export async function buildApp(): Promise<FastifyInstance> {
       await auditLog(admin.id, 'pool_state_updated', updates);
       return { ok: true };
     } catch (e: any) { return reply.code(500).send({ error: e.message }); }
+  });
+
+  // ── ADMIN SYSTEM STATUS ─────────────────────────────────────
+  app.get('/api/admin/system', async (req, reply) => {
+    const admin = await verifyAdmin(req, reply);
+    if (!admin) return;
+    const status: any = {};
+    status.supabase = { configured: supabaseConfigured };
+    status.service_role = { configured: !!SUPABASE_SERVICE_KEY };
+    status.redis = { configured: !!(redisUrl && redisToken) };
+    try { await redis.ping(); status.redis.connected = true; } catch { status.redis.connected = false; }
+    status.telegram = { configured: !!(TELEGRAM_BOT_TOKEN && TELEGRAM_WEBHOOK_SECRET), bot_username: TELEGRAM_BOT_USERNAME || null };
+    status.x_oauth = { configured: !!(X_CLIENT_ID && X_CLIENT_SECRET) };
+    status.quicknode = { configured: !!getQuicknodeHttpUrl(), webhook_configured: !!QUICKNODE_WEBHOOK_SECRET };
+    return { ok: true, ...status };
   });
 
   return app;
