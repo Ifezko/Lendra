@@ -97,31 +97,40 @@ Credit scoring is confusing. Lendra AI explains the user’s score, eligibility,
 
 ## Ika
 
-Lendra uses Ika for cross-chain credit signals.
+Lendra uses Ika as the Cross-Chain Credit integration layer.
 
-Current use:
+Current implementation:
 
-- Cross-chain credit card in Trust Score
-- External wallet signal tracking
-- `ika_connected` and `ika_chains_count` stored in wallet profile
+- User enters an Ethereum wallet address
+- Lendra validates the address
+- Lendra creates a Solana devnet memo proof transaction
+- The connected wallet signs the transaction
+- Lendra stores the devnet transaction signature and explorer link in Supabase
+- The user’s profile is updated with `ika_connected = true` and `ika_chains_count = 1`
 
-Why it matters:
-
-A user’s creditworthiness may not live only on Solana. Ika helps Lendra expand credit profiles across chains.
+This is a devnet/pre-alpha proof integration used to demonstrate cross-chain credit signal import.
 
 ## Encrypt
 
-Lendra uses Encrypt for Private Mode.
+Lendra uses Encrypt as the Private Mode integration layer.
 
-Current use:
+Current implementation:
 
-- `encrypt_private_mode` on wallet profile
-- Private Mode toggle
-- Privacy-first credit profile direction
+- User enables Private Mode from the app
+- Lendra creates a Solana devnet memo proof transaction
+- The connected wallet signs the transaction
+- Lendra stores the devnet transaction signature and explorer link in Supabase
+- The user’s wallet profile is updated with `encrypt_private_mode = true`
 
-Why it matters:
+This is a devnet/pre-alpha proof integration. Lendra does not store sensitive credit or loan data in the memo.
 
-Credit data is sensitive. Encrypt helps Lendra build toward private credit profiles where users can prove trust without exposing unnecessary data.
+### Devnet Funding Note
+
+Devnet proof transactions require the connected Solana wallet to have devnet SOL. If the wallet has no devnet SOL, Solana may return:
+
+“Attempt to debit an account but found no record of a prior credit.”
+
+Users can fund their connected Solana wallet using a Solana devnet faucet.
 
 ## Kamino
 
