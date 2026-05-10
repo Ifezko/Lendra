@@ -1,9 +1,9 @@
 import { cors, getRedis, genSessionToken } from '../_lib/shared.js';
 import { createHash } from 'crypto';
 
-const ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'admin@lendra.io';
+const ADMIN_EMAIL = process.env.ADMIN_EMAIL || '';
 const ADMIN_PASSWORD_HASH = process.env.ADMIN_PASSWORD_HASH || '';
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'lendra-dev-2024';
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || '';
 
 // DISABLED: Handled by catch-all api/[...path].js
 async function _disabled(req, res) {

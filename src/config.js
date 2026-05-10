@@ -21,4 +21,8 @@ export const SOLANA_RPC = API_BASE_URL
   ? `${API_BASE_URL}/api/solana/rpc/mainnet`
   : '/api/quicknode/rpc/solana';
 
+export const DEVNET_RPC = API_BASE_URL
+  ? `${API_BASE_URL}/api/quicknode/rpc/solana-devnet`
+  : '/api/quicknode/rpc/solana-devnet';
+
 export { API_BASE_URL };

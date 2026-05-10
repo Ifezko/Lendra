@@ -70,7 +70,10 @@ export default function Header({ onMenuToggle, showMenu }) {
               </div>
             </button>
           )}
-          <WalletMultiButton />
+          {connected
+            ? <WalletMultiButton />
+            : <WalletMultiButton>Scan Wallet</WalletMultiButton>
+          }
         </div>
       </div>
     </header>

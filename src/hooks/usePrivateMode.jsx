@@ -1,23 +1,21 @@
 import { useState, useCallback, useEffect } from 'react';
-import { useConnection, useWallet } from '@solana/wallet-adapter-react';
-import { Transaction, SystemProgram, PublicKey } from '@solana/web3.js';
+import { useWallet } from '@solana/wallet-adapter-react';
 import { insertPartnerEvent, getPartnerEvents, upsertWalletProfile } from '../lib/db';
+import { useDevnetMemo } from './useDevnetMemo';
 
-// Encrypt Protocol integration (pre-alpha, devnet)
-// In production, this would use the Encrypt SDK to create FHE ciphertext accounts.
-// For now, we simulate the encryption flow with a real on-chain transaction that
-// stores an encrypted data marker, demonstrating the privacy concept.
-
-const ENCRYPT_PROGRAM_ID = 'enc1yptNativeProgram111111111111111111111';
-const DEVNET_MARKER = new PublicKey('1nc1nerator11111111111111111111111111111111');
+// Encrypt Protocol integration (pre-alpha)
+// Uses a real Solana devnet memo transaction to record an immutable
+// on-chain proof when the user enables or disables Private Mode.
+// The memo is sent via the Memo Program v2 and the tx signature is
+// persisted to the DB + localStorage for future verification.
 
 export function usePrivateMode() {
   const [isPrivate, setIsPrivate] = useState(false);
   const [encryptionTx, setEncryptionTx] = useState(null);
   const [isEncrypting, setIsEncrypting] = useState(false);
   const [encryptError, setEncryptError] = useState(null);
-  const { connection } = useConnection();
-  const { publicKey, signTransaction } = useWallet();
+  const { publicKey } = useWallet();
+  const { sendMemo, ready: memoReady } = useDevnetMemo();
 
   // Load from DB on wallet connect, fallback to localStorage
   useEffect(() => {
@@ -31,7 +29,6 @@ export function usePrivateMode() {
           setIsPrivate(latest.event_type === 'private_mode_enabled');
           if (latest.metadata?.txSignature) setEncryptionTx(latest.metadata.txSignature);
         } else {
-          // Fallback
           try {
             setIsPrivate(localStorage.getItem('lendra-private-mode') === 'true');
             setEncryptionTx(localStorage.getItem('lendra-encrypt-tx') || null);
@@ -46,25 +43,13 @@ export function usePrivateMode() {
     })();
   }, [publicKey]);
 
-  const confirmWithPolling = useCallback(async (sig, timeout = 60000) => {
-    const start = Date.now();
-    while (Date.now() - start < timeout) {
-      const status = await connection.getSignatureStatus(sig);
-      if (
-        status?.value?.confirmationStatus === 'confirmed' ||
-        status?.value?.confirmationStatus === 'finalized'
-      ) {
-        if (status.value.err) throw new Error('Encryption transaction failed');
-        return status;
-      }
-      await new Promise((r) => setTimeout(r, 2000));
-    }
-    throw new Error('Encryption transaction confirmation timeout');
-  }, [connection]);
-
   const enablePrivateMode = useCallback(async () => {
-    if (!publicKey || !signTransaction) {
+    if (!publicKey) {
       setEncryptError('Connect your wallet first');
+      return false;
+    }
+    if (!memoReady) {
+      setEncryptError('Wallet not ready to sign. Please reconnect.');
       return false;
     }
 
@@ -72,45 +57,24 @@ export function usePrivateMode() {
     setEncryptError(null);
 
     try {
-      // Create an on-chain transaction that represents the encryption operation.
-      // In production with Encrypt SDK, this would create FHE ciphertext accounts
-      // via execute_graph. For the pre-alpha demo, we send a minimal SOL transaction
-      // with a memo-like marker to prove the privacy intent on-chain.
-      const tx = new Transaction();
+      const wallet = publicKey.toBase58();
+      const ts = Date.now();
+      const memo = `LENDRA_PRIVATE_MODE_ENABLED:${wallet}:${ts}`;
 
-      // Minimal transfer to mark the encryption event on-chain
-      tx.add(
-        SystemProgram.transfer({
-          fromPubkey: publicKey,
-          toPubkey: DEVNET_MARKER,
-          lamports: 5000, // ~0.000005 SOL, minimal dust
-        })
-      );
+      // Send real devnet memo transaction — wallet will prompt for signature
+      const txSignature = await sendMemo(memo);
 
-      const { blockhash } = await connection.getLatestBlockhash('confirmed');
-      tx.recentBlockhash = blockhash;
-      tx.feePayer = publicKey;
-
-      const signed = await signTransaction(tx);
-      const sig = await connection.sendRawTransaction(signed.serialize(), {
-        skipPreflight: false,
-      });
-
-      await confirmWithPolling(sig);
-
-      // Persist state
-      setEncryptionTx(sig);
+      setEncryptionTx(txSignature);
       setIsPrivate(true);
       localStorage.setItem('lendra-private-mode', 'true');
-      localStorage.setItem('lendra-encrypt-tx', sig);
+      localStorage.setItem('lendra-encrypt-tx', txSignature);
 
       // Persist to partner_events + wallet_profiles
-      const wallet = publicKey.toBase58();
       insertPartnerEvent({
         wallet_address: wallet,
         partner: 'encrypt',
         event_type: 'private_mode_enabled',
-        metadata: { txSignature: sig },
+        metadata: { txSignature, memo, timestamp: ts },
       }).catch(() => {});
       upsertWalletProfile(wallet, { encrypt_private_mode: true }).catch(() => {});
 
@@ -122,27 +86,60 @@ export function usePrivateMode() {
     } finally {
       setIsEncrypting(false);
     }
-  }, [publicKey, signTransaction, connection, confirmWithPolling]);
+  }, [publicKey, sendMemo, memoReady]);
 
-  const disablePrivateMode = useCallback(() => {
-    setIsPrivate(false);
-    localStorage.setItem('lendra-private-mode', 'false');
+  const disablePrivateMode = useCallback(async () => {
+    if (!publicKey) {
+      setIsPrivate(false);
+      localStorage.setItem('lendra-private-mode', 'false');
+      return;
+    }
 
-    if (publicKey) {
-      const wallet = publicKey.toBase58();
+    setIsEncrypting(true);
+    setEncryptError(null);
+
+    const wallet = publicKey.toBase58();
+
+    try {
+      if (memoReady) {
+        const ts = Date.now();
+        const memo = `LENDRA_PRIVATE_MODE_DISABLED:${wallet}:${ts}`;
+        const txSignature = await sendMemo(memo);
+
+        insertPartnerEvent({
+          wallet_address: wallet,
+          partner: 'encrypt',
+          event_type: 'private_mode_disabled',
+          metadata: { txSignature, memo, timestamp: ts },
+        }).catch(() => {});
+      } else {
+        // Fallback: persist without on-chain proof if wallet can't sign
+        insertPartnerEvent({
+          wallet_address: wallet,
+          partner: 'encrypt',
+          event_type: 'private_mode_disabled',
+          metadata: {},
+        }).catch(() => {});
+      }
+    } catch (err) {
+      console.warn('Disable memo tx failed, persisting off-chain only:', err.message);
       insertPartnerEvent({
         wallet_address: wallet,
         partner: 'encrypt',
         event_type: 'private_mode_disabled',
-        metadata: {},
+        metadata: { error: err.message },
       }).catch(() => {});
+    } finally {
+      setIsPrivate(false);
+      setIsEncrypting(false);
+      localStorage.setItem('lendra-private-mode', 'false');
       upsertWalletProfile(wallet, { encrypt_private_mode: false }).catch(() => {});
     }
-  }, [publicKey]);
+  }, [publicKey, sendMemo, memoReady]);
 
   const togglePrivateMode = useCallback(async () => {
     if (isPrivate) {
-      disablePrivateMode();
+      await disablePrivateMode();
       return true;
     }
     return enablePrivateMode();

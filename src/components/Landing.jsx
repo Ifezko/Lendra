@@ -312,7 +312,7 @@ export default function Landing() {
                 Lendra scans your Solana wallet, builds a credit profile, and shows what you can borrow based on real onchain behavior.
               </p>
               <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 mb-6">
-                <WalletMultiButton className="!rounded-xl !font-bold !text-sm !h-12 !px-8 !bg-brand-accent !text-[#0A0A0F]" />
+                <WalletMultiButton className="!rounded-xl !font-bold !text-sm !h-12 !px-8 !bg-brand-accent !text-[#0A0A0F]">Scan Wallet</WalletMultiButton>
                 <button onClick={scrollToHow} className="flex items-center gap-2 px-5 h-12 rounded-xl border border-brand-border text-sm font-semibold text-brand-muted hover:text-white hover:border-brand-accent/30 transition-colors">
                   See how it works <ChevronDown className="w-4 h-4" />
                 </button>
@@ -453,7 +453,7 @@ export default function Landing() {
           <motion.div initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }}>
             <h2 className="text-2xl md:text-3xl font-bold text-white mb-3">See what your wallet can unlock.</h2>
             <p className="text-sm text-brand-muted mb-8 max-w-md mx-auto">Start with your wallet history. Get a credit profile in minutes.</p>
-            <WalletMultiButton className="!rounded-xl !font-bold !text-sm !h-12 !px-8 !mx-auto !bg-brand-accent !text-[#0A0A0F]" />
+            <WalletMultiButton className="!rounded-xl !font-bold !text-sm !h-12 !px-8 !mx-auto !bg-brand-accent !text-[#0A0A0F]">Scan Wallet</WalletMultiButton>
             <p className="text-xs text-brand-muted mt-4">Built on Solana. Designed for active wallets.</p>
           </motion.div>
         </div>

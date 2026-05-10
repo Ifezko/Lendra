@@ -1,14 +1,13 @@
 import { useState, useCallback, useEffect } from 'react';
-import { useConnection, useWallet } from '@solana/wallet-adapter-react';
-import { Transaction, SystemProgram, PublicKey } from '@solana/web3.js';
+import { useWallet } from '@solana/wallet-adapter-react';
 import { insertPartnerEvent, getPartnerEvents, upsertWalletProfile } from '../lib/db';
+import { useDevnetMemo } from './useDevnetMemo';
 
-// Ika dWallet cross-chain identity integration (pre-alpha, devnet)
-// In production, this would use the Ika SDK to create dWallet keys via 2PC-MPC DKG,
-// then approve_message CPI to bind the external wallet identity on-chain.
-// For the pre-alpha demo, we simulate the cross-chain identity binding flow.
-
-const IKA_MARKER = new PublicKey('1nc1nerator11111111111111111111111111111111');
+// Ika dWallet cross-chain identity integration (pre-alpha)
+// Uses a real Solana devnet memo transaction to record an immutable
+// on-chain proof when the user binds an external wallet identity.
+// The memo is sent via the Memo Program v2 and the tx signature is
+// persisted to the DB + localStorage for future verification.
 
 // Simulated external wallet analysis based on address patterns
 function analyzeExternalWallet(address, chain) {
@@ -34,8 +33,8 @@ export function useIkaCrossChain() {
   const [bindingTx, setBindingTx] = useState(null);
   const [isBinding, setIsBinding] = useState(false);
   const [bindError, setBindError] = useState(null);
-  const { connection } = useConnection();
-  const { publicKey, signTransaction } = useWallet();
+  const { publicKey } = useWallet();
+  const { sendMemo, ready: memoReady } = useDevnetMemo();
 
   // Load connected chains from DB on wallet connect
   useEffect(() => {
@@ -65,24 +64,8 @@ export function useIkaCrossChain() {
 
   const totalCrossChainBoost = connectedChains.reduce((sum, c) => sum + (c.totalBoost || 0), 0);
 
-  const confirmWithPolling = useCallback(async (sig, timeout = 60000) => {
-    const start = Date.now();
-    while (Date.now() - start < timeout) {
-      const status = await connection.getSignatureStatus(sig);
-      if (
-        status?.value?.confirmationStatus === 'confirmed' ||
-        status?.value?.confirmationStatus === 'finalized'
-      ) {
-        if (status.value.err) throw new Error('Identity binding transaction failed');
-        return status;
-      }
-      await new Promise((r) => setTimeout(r, 2000));
-    }
-    throw new Error('Transaction confirmation timeout');
-  }, [connection]);
-
   const connectExternalWallet = useCallback(async (externalAddress, chain = 'ETH') => {
-    if (!publicKey || !signTransaction) {
+    if (!publicKey) {
       setBindError('Connect your Solana wallet first');
       return null;
     }
@@ -93,52 +76,47 @@ export function useIkaCrossChain() {
       return null;
     }
 
+    // Basic address validation
+    if (chain === 'ETH' && !/^0x[a-fA-F0-9]{40}$/.test(externalAddress)) {
+      setBindError('Invalid Ethereum address. Must start with 0x followed by 40 hex characters.');
+      return null;
+    }
+    if (chain === 'BTC' && externalAddress.length < 26) {
+      setBindError('Invalid Bitcoin address.');
+      return null;
+    }
+
+    if (!memoReady) {
+      setBindError('Wallet not ready to sign. Please reconnect.');
+      return null;
+    }
+
     setIsBinding(true);
     setBindError(null);
 
     try {
-      // In production, this would:
-      // 1. Call Ika DKG to create a dWallet controlling a key pair
-      // 2. The user signs a message with their external wallet proving ownership
-      // 3. approve_message CPI binds the external identity to the Solana wallet
-      // For pre-alpha demo, we create an on-chain transaction that records the binding.
+      const wallet = publicKey.toBase58();
+      const ts = Date.now();
+      const memo = `LENDRA_CROSS_CHAIN:${wallet}:${chain.toLowerCase()}:${externalAddress}:${ts}`;
 
-      const tx = new Transaction();
-      tx.add(
-        SystemProgram.transfer({
-          fromPubkey: publicKey,
-          toPubkey: IKA_MARKER,
-          lamports: 5000,
-        })
-      );
+      // Send real devnet memo transaction — wallet will prompt for signature
+      const txSignature = await sendMemo(memo);
 
-      const { blockhash } = await connection.getLatestBlockhash('confirmed');
-      tx.recentBlockhash = blockhash;
-      tx.feePayer = publicKey;
-
-      const signed = await signTransaction(tx);
-      const sig = await connection.sendRawTransaction(signed.serialize(), {
-        skipPreflight: false,
-      });
-
-      await confirmWithPolling(sig);
-
-      // Analyze external wallet
+      // Analyze external wallet for score boost
       const analysis = analyzeExternalWallet(externalAddress, chain);
 
       const updated = [...connectedChains, analysis];
       setConnectedChains(updated);
-      setBindingTx(sig);
+      setBindingTx(txSignature);
       localStorage.setItem('lendra-ika-chains', JSON.stringify(updated));
-      localStorage.setItem('lendra-ika-tx', sig);
+      localStorage.setItem('lendra-ika-tx', txSignature);
 
       // Persist to partner_events
-      const wallet = publicKey.toBase58();
       insertPartnerEvent({
         wallet_address: wallet,
         partner: 'ika',
         event_type: 'cross_chain_bind',
-        metadata: { ...analysis, txSignature: sig },
+        metadata: { ...analysis, txSignature, memo, timestamp: ts },
       }).catch(() => {});
 
       // Update wallet profile with cross-chain boost
@@ -147,7 +125,7 @@ export function useIkaCrossChain() {
         ika_chains_count: updated.length,
       }).catch(() => {});
 
-      return { ...analysis, txSignature: sig };
+      return { ...analysis, txSignature };
     } catch (err) {
       console.error('Ika cross-chain binding failed:', err);
       setBindError(err.message || 'Failed to bind external wallet');
@@ -155,7 +133,7 @@ export function useIkaCrossChain() {
     } finally {
       setIsBinding(false);
     }
-  }, [publicKey, signTransaction, connection, connectedChains, confirmWithPolling]);
+  }, [publicKey, connectedChains, sendMemo, memoReady]);
 
   const disconnectChain = useCallback((address, chain) => {
     const updated = connectedChains.filter(

@@ -38,6 +38,7 @@ const NAV_SECTIONS = [
       { to: '/telegram', label: 'Telegram', icon: MessageCircle, roles: ['super_admin', 'admin'] },
       { to: '/social-cards', label: 'Social Cards', icon: CreditCard, roles: ['super_admin', 'admin', 'analyst'] },
       { to: '/x-verification', label: 'X Verification', icon: BadgeCheck, roles: ['super_admin', 'admin', 'analyst'] },
+      { to: '/integrations', label: 'Integrations', icon: Webhook, roles: ['super_admin', 'admin', 'analyst'] },
     ],
   },
   {

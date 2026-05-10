@@ -23,6 +23,7 @@ import DataWiring from './pages/DataWiring';
 import TelegramPage from './pages/Telegram';
 import PoolPage from './pages/Pool';
 import SystemSettings from './pages/SystemSettings';
+import IntegrationMetrics from './pages/IntegrationMetrics';
 import { Menu, Loader2 } from 'lucide-react';
 
 function AdminHeader({ onMenuToggle }) {
@@ -76,6 +77,7 @@ export default function AdminLayout() {
                 <Route path="qvac" element={<QVAC />} />
                 <Route path="social-cards" element={<SocialCards />} />
                 <Route path="x-verification" element={<XVerification />} />
+                <Route path="integrations" element={<IntegrationMetrics />} />
                 <Route path="pool-waitlist" element={<PoolWaitlist />} />
               </>
             )}

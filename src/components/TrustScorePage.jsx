@@ -398,7 +398,7 @@ export default function TrustScorePage({ scoreData }) {
                   </div>
                 </div>
                 {privateMode?.encryptionTx && (
-                  <a href={`https://solscan.io/tx/${privateMode.encryptionTx}?cluster=devnet`} target="_blank" rel="noopener noreferrer" className="mt-3 inline-flex items-center gap-1.5 text-xs text-brand-accent hover:underline">
+                  <a href={`https://explorer.solana.com/tx/${privateMode.encryptionTx}?cluster=devnet`} target="_blank" rel="noopener noreferrer" className="mt-3 inline-flex items-center gap-1.5 text-xs text-brand-accent hover:underline">
                     View encryption tx <ExternalLink className="w-3 h-3" />
                   </a>
                 )}

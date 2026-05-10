@@ -106,6 +106,11 @@ function checkPassword(password: string, stored: string): boolean {
     if (hashBuf.length !== derivedBuf.length) return false;
     return timingSafeEqual(hashBuf, derivedBuf);
   }
+  // Support SHA-256 hex hashes (legacy format)
+  if (/^[a-f0-9]{64}$/i.test(stored)) {
+    const sha256 = createHash('sha256').update(password).digest('hex');
+    return sha256 === stored.toLowerCase();
+  }
   return false;
 }
 
@@ -303,6 +308,7 @@ export async function buildApp(): Promise<FastifyInstance> {
     appUrl: APP_URL,
     supabaseConfigured,
     redisConfigured: !!(redisUrl && redisToken),
+    quicknodeDevnetConfigured: !!process.env.QUICKNODE_DEVNET_HTTP_URL,
     timestamp: new Date().toISOString(),
   }));
 
@@ -965,8 +971,9 @@ export async function buildApp(): Promise<FastifyInstance> {
           return reply.code(401).send({ error: 'Invalid credentials' });
         }
         let pwValid = false;
+        // Try hash check first, then fall back to plain password comparison
         if (ADMIN_PASSWORD_HASH_ENV) { pwValid = checkPassword(password, ADMIN_PASSWORD_HASH_ENV); }
-        else if (ADMIN_PASSWORD_ENV) { pwValid = password === ADMIN_PASSWORD_ENV; }
+        if (!pwValid && ADMIN_PASSWORD_ENV) { pwValid = password === ADMIN_PASSWORD_ENV; }
         if (!pwValid) {
           try { await sbInsert('admin_login_attempts', { email, ip_address: ip, success: false, failure_reason: 'bootstrap_bad_password' }); } catch {}
           return reply.code(401).send({ error: 'Invalid credentials' });
@@ -1008,7 +1015,7 @@ export async function buildApp(): Promise<FastifyInstance> {
     }
   });
 
-  // Legacy alias — delegate directly to the auth/login handler
+  // Legacy alias — delegates to same bootstrap + normal login logic
   app.post('/api/admin/login', async (req, reply) => {
     const { email, password } = req.body as any || {};
     if (!email || !password) return reply.code(400).send({ error: 'Email and password required' });
@@ -1024,8 +1031,9 @@ export async function buildApp(): Promise<FastifyInstance> {
           return reply.code(401).send({ error: 'Invalid credentials' });
         }
         let pwValid = false;
+        // Try hash check first, then fall back to plain password comparison
         if (ADMIN_PASSWORD_HASH_ENV) { pwValid = checkPassword(password, ADMIN_PASSWORD_HASH_ENV); }
-        else if (ADMIN_PASSWORD_ENV) { pwValid = password === ADMIN_PASSWORD_ENV; }
+        if (!pwValid && ADMIN_PASSWORD_ENV) { pwValid = password === ADMIN_PASSWORD_ENV; }
         if (!pwValid) {
           try { await sbInsert('admin_login_attempts', { email, ip_address: ip, success: false, failure_reason: 'bootstrap_bad_password' }); } catch {}
           return reply.code(401).send({ error: 'Invalid credentials' });
@@ -1377,6 +1385,123 @@ export async function buildApp(): Promise<FastifyInstance> {
     status.x_oauth = { configured: !!(X_CLIENT_ID && X_CLIENT_SECRET) };
     status.quicknode = { configured: !!getQuicknodeHttpUrl(), webhook_configured: !!QUICKNODE_WEBHOOK_SECRET };
     return { ok: true, ...status };
+  });
+
+  // ── DEVNET RPC PROXY ──────────────────────────────────────────
+  app.post('/api/quicknode/rpc/solana-devnet', async (req, reply) => {
+    const devnetUrl = process.env.QUICKNODE_DEVNET_HTTP_URL;
+    if (!devnetUrl) {
+      return reply.code(500).send({
+        ok: false,
+        stage: 'rpc_config',
+        error: 'Devnet HTTP Solana RPC endpoint is required. Set QUICKNODE_DEVNET_HTTP_URL.',
+      });
+    }
+    try {
+      const body = typeof req.body === 'string' ? req.body : JSON.stringify(req.body);
+      const upstream = await fetch(devnetUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body,
+      });
+      if (!upstream.ok) {
+        await upstream.text().catch(() => '');
+        return reply.code(502).send({ ok: false, stage: 'rpc_fetch', error: `Devnet RPC request failed (${upstream.status})` });
+      }
+      const data = await upstream.json();
+      return data;
+    } catch (err: any) {
+      return reply.code(500).send({ ok: false, stage: 'rpc_fetch', error: 'Devnet RPC request failed', details: err.message });
+    }
+  });
+
+  // ── PRIVACY / PRIVATE MODE (Encrypt) ──────────────────────────
+  app.post('/api/privacy/private-mode', async (req, reply) => {
+    const { wallet_address, enabled, tx_signature, memo } = req.body as any;
+    if (!wallet_address) return reply.code(400).send({ error: 'wallet_address required' });
+    try {
+      await sbInsert('partner_events', {
+        wallet_address,
+        partner: 'encrypt',
+        event_type: enabled ? 'private_mode_enabled' : 'private_mode_disabled',
+        metadata: { txSignature: tx_signature || null, memo: memo || null, timestamp: Date.now() },
+      });
+      try {
+        await sbUpsert('wallet_profiles', { wallet_address, encrypt_private_mode: !!enabled });
+      } catch { /* profile table may not have column yet */ }
+      return { ok: true, tx_signature };
+    } catch (e: any) { return reply.code(500).send({ error: e.message }); }
+  });
+
+  // ── CROSS-CHAIN CONNECT (Ika) ─────────────────────────────────
+  app.post('/api/cross-chain/connect', async (req, reply) => {
+    const { wallet_address, chain, external_address, tx_signature, analysis } = req.body as any;
+    if (!wallet_address || !chain || !external_address) {
+      return reply.code(400).send({ error: 'wallet_address, chain, and external_address required' });
+    }
+    try {
+      await sbInsert('partner_events', {
+        wallet_address,
+        partner: 'ika',
+        event_type: 'cross_chain_bind',
+        metadata: { ...(analysis || {}), chain, address: external_address, txSignature: tx_signature || null, timestamp: Date.now() },
+      });
+      try {
+        await sbUpsert('wallet_profiles', { wallet_address, ika_connected: true });
+      } catch { /* ignore */ }
+      return { ok: true, tx_signature };
+    } catch (e: any) { return reply.code(500).send({ error: e.message }); }
+  });
+
+  // ── ADMIN INTEGRATION METRICS ─────────────────────────────────
+  app.get('/api/admin/integrations', async (req, reply) => {
+    const admin = await verifyAdmin(req, reply);
+    if (!admin) return;
+    try {
+      const encryptEvents = await sbSelect('partner_events', 'select=id,event_type,wallet_address,metadata,created_at&partner=eq.encrypt&order=created_at.desc&limit=200');
+      const ikaEvents = await sbSelect('partner_events', 'select=id,event_type,wallet_address,metadata,created_at&partner=eq.ika&order=created_at.desc&limit=200');
+
+      const encryptEnabled = (encryptEvents || []).filter((e: any) => e.event_type === 'private_mode_enabled');
+      const encryptDisabled = (encryptEvents || []).filter((e: any) => e.event_type === 'private_mode_disabled');
+      const encryptWallets = new Set(encryptEnabled.map((e: any) => e.wallet_address));
+      const disabledWallets = new Set(encryptDisabled.map((e: any) => e.wallet_address));
+      const currentlyActive = [...encryptWallets].filter((w) => !disabledWallets.has(w)).length;
+      const encryptWithTx = encryptEnabled.filter((e: any) => e.metadata?.txSignature && !e.metadata.txSignature.startsWith('encrypt_'));
+
+      const ikaBindings = (ikaEvents || []).filter((e: any) => e.event_type === 'cross_chain_bind');
+      const ikaWallets = new Set(ikaBindings.map((e: any) => e.wallet_address));
+      const ikaWithTx = ikaBindings.filter((e: any) => e.metadata?.txSignature && !e.metadata.txSignature.startsWith('ika_'));
+      const ethBindings = ikaBindings.filter((e: any) => (e.metadata?.chain || '').toUpperCase() === 'ETH');
+      const btcBindings = ikaBindings.filter((e: any) => (e.metadata?.chain || '').toUpperCase() === 'BTC');
+
+      const allEvents = [...(encryptEvents || []), ...(ikaEvents || [])].sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+
+      return {
+        ok: true,
+        encrypt: {
+          totalEnabled: encryptEnabled.length,
+          currentlyActive,
+          uniqueWallets: encryptWallets.size,
+          onChainTxCount: encryptWithTx.length,
+        },
+        ika: {
+          totalBindings: ikaBindings.length,
+          activeChains: new Set(ikaBindings.map((e: any) => e.metadata?.chain)).size,
+          uniqueWallets: ikaWallets.size,
+          onChainTxCount: ikaWithTx.length,
+          ethCount: ethBindings.length,
+          btcCount: btcBindings.length,
+        },
+        recentEvents: allEvents.slice(0, 50).map((e: any) => ({
+          id: e.id,
+          partner: (encryptEvents || []).includes(e) ? 'encrypt' : 'ika',
+          event_type: e.event_type,
+          wallet_address: e.wallet_address,
+          metadata: e.metadata,
+          created_at: e.created_at,
+        })),
+      };
+    } catch (e: any) { return reply.code(500).send({ error: e.message }); }
   });
 
   return app;

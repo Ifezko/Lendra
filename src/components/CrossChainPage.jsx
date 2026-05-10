@@ -128,8 +128,8 @@ export default function CrossChainPage() {
             </div>
             <p className="text-xs text-brand-muted mb-3">Your {result.chain} wallet has been linked via Ika dWallet MPC. Score boost: +{result.totalBoost} pts.</p>
             {result.txSignature && (
-              <a href={`https://solscan.io/tx/${result.txSignature}?cluster=devnet`} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 text-xs text-brand-accent hover:underline">
-                View binding transaction on Solscan <ExternalLink className="w-3 h-3" />
+              <a href={`https://explorer.solana.com/tx/${result.txSignature}?cluster=devnet`} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 text-xs text-brand-accent hover:underline">
+                View binding transaction on Explorer <ExternalLink className="w-3 h-3" />
               </a>
             )}
             <button onClick={() => setResult(null)} className="block mt-2 text-xs text-brand-muted hover:text-white transition-colors">Dismiss</button>
