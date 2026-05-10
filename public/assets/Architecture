@@ -90,3 +90,13 @@ User qualifies
 - Sensitive admin routes require authenticated sessions.
 - X uses OAuth, not DM OTP.
 - Telegram webhook validates secret token.
+
+## Devnet Proof Layer
+
+Lendra separates production app state from devnet proof transactions.
+
+- Supabase is the source of truth for app state and analytics.
+- QuickNode mainnet RPC supports wallet scan and scoring.
+- QuickNode devnet RPC supports proof transactions for Private Mode and Cross-Chain Credit.
+- Solana Memo Program is used for lightweight proof records.
+- Partner proof events are stored in `partner_events`.
