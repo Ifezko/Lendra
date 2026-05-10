@@ -46,6 +46,16 @@ Lendra is built for:
 7. User joins the pool launch waitlist.
 8. User can receive Telegram alerts when the pool goes live.
 
+### Devnet Proof Integrations
+
+Lendra currently runs the lending flow in simulation mode, but Private Mode and Cross-Chain Credit include Solana devnet proof transactions.
+
+When a user enables Private Mode, Lendra creates a Solana devnet memo proof and stores the transaction signature in Supabase.
+
+When a user connects an Ethereum wallet for Cross-Chain Credit, Lendra validates the Ethereum address, creates a Solana devnet memo proof, stores the devnet transaction signature, and updates the user’s trust profile.
+
+These devnet proofs are used for technical validation and partner integration demonstration. No sensitive credit, loan, portfolio, or private financial data is stored in the memo.
+
 ## Lendra Score
 
 Lendra Score is out of 1000.
@@ -114,15 +124,17 @@ Lendra does not position Kamino as the borrower-side loan engine. Kamino is used
 
 ### QuickNode
 
-Lendra uses QuickNode for Solana RPC, wallet activity infrastructure, and webhook-ready monitoring.
+Lendra uses QuickNode as its Solana infrastructure layer.
 
-Planned webhook use cases:
+Current use:
 
-- Wallet activity updates
-- Score recalculation triggers
-- Bond deposit detection
-- Repayment detection
-- Telegram alert triggers
+- Mainnet wallet activity scanning
+- Solana RPC reads for score calculation
+- Solana devnet RPC for Private Mode proof transactions
+- Solana devnet RPC for Cross-Chain Credit proof transactions
+- Webhook-ready event monitoring for future repayment, bond, and score updates
+
+QuickNode is central to Lendra’s data and transaction infrastructure.
 
 ### Solflare
 
