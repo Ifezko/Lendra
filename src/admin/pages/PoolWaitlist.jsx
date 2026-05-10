@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useAdminAuth } from '../useAdminAuth';
+import { supabase } from '../../lib/supabase';
 import {
   Rocket,
   Users,
@@ -14,14 +15,18 @@ import {
   CheckCircle,
 } from 'lucide-react';
 
-const STORAGE_KEY = 'lendra_pool_waitlist';
-
-function getAllWaitlistEntries() {
+async function getAllWaitlistEntries() {
   try {
-    const all = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
-    return Object.values(all).sort(
-      (a, b) => new Date(b.created_at) - new Date(a.created_at)
-    );
+    const { data, error } = await supabase
+      .from('pool_launch_waitlist')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(500);
+    if (error) {
+      console.warn('[PoolWaitlist] fetch error:', error.message);
+      return [];
+    }
+    return data || [];
   } catch {
     return [];
   }
@@ -57,9 +62,11 @@ export default function PoolWaitlist() {
   const [notifyConfirm, setNotifyConfirm] = useState(false);
 
   useEffect(() => {
-    const data = getAllWaitlistEntries();
-    setEntries(data);
-    setLoading(false);
+    (async () => {
+      const data = await getAllWaitlistEntries();
+      setEntries(data);
+      setLoading(false);
+    })();
   }, []);
 
   const filtered = useMemo(() => {
@@ -119,20 +126,27 @@ export default function PoolWaitlist() {
     return [...set];
   }, [entries]);
 
-  const handleNotifyWaitlist = () => {
+  const handleNotifyWaitlist = async () => {
     if (admin?.role !== 'super_admin') return;
-    const updated = entries.map((e) => {
-      if (e.status === 'waiting') {
-        return { ...e, status: 'notified', notified_at: new Date().toISOString() };
-      }
-      return e;
-    });
-    const all = {};
-    updated.forEach((e) => {
-      all[e.wallet_address] = e;
-    });
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(all));
-    setEntries(updated);
+    const waitingIds = entries.filter((e) => e.status === 'waiting').map((e) => e.id);
+    if (waitingIds.length === 0) return;
+
+    const now = new Date().toISOString();
+    const { error } = await supabase
+      .from('pool_launch_waitlist')
+      .update({ status: 'notified', notified_at: now })
+      .in('id', waitingIds);
+
+    if (error) {
+      console.warn('[PoolWaitlist] notify error:', error.message);
+      return;
+    }
+
+    setEntries((prev) =>
+      prev.map((e) =>
+        e.status === 'waiting' ? { ...e, status: 'notified', notified_at: now } : e
+      )
+    );
     setNotifyConfirm(false);
   };
 

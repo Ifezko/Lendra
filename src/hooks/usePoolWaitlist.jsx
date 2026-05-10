@@ -1,7 +1,8 @@
 import { useState, useCallback, useEffect } from 'react';
 import { useWallet } from '@solana/wallet-adapter-react';
-import { insertLoanEvent } from '../lib/db';
 import { supabase } from '../lib/supabase';
+
+const TABLE = 'pool_launch_waitlist';
 
 export function usePoolWaitlist() {
   const { publicKey } = useWallet();
@@ -15,14 +16,12 @@ export function usePoolWaitlist() {
       setLoading(false);
       return;
     }
-    // Fetch existing waitlist entry from DB
     (async () => {
       try {
         const { data } = await supabase
-          .from('loan_events')
+          .from(TABLE)
           .select('*')
           .eq('wallet_address', wallet)
-          .eq('event_type', 'waitlist_join')
           .order('created_at', { ascending: false })
           .limit(1)
           .maybeSingle();
@@ -38,30 +37,45 @@ export function usePoolWaitlist() {
   const joinWaitlist = useCallback(async (data) => {
     if (!wallet) return null;
 
-    const eventRow = {
+    const row = {
       wallet_address: wallet,
-      event_type: 'waitlist_join',
+      simulated_loan_amount: data.amount || 0,
       borrow_asset: data.borrowAsset || 'USDC',
-      loan_amount: data.amount || 0,
       bond_amount: data.bondAmount || 0,
       bond_percentage: 30,
       loan_level: data.loanLevel || 0,
       level_name: data.levelName || '',
       loan_purpose_text: data.purposeText || '',
       loan_purpose_tags: data.purposeTags || [],
+      score: data.score || 0,
+      eligible: data.eligible || false,
+      telegram_connected: data.telegramConnected || false,
+      x_connected: data.xConnected || false,
+      x_username: data.xUsername || '',
+      notification_channel: data.notifyVia || 'x',
+      wants_telegram: data.wantsTelegram || false,
       status: 'waiting',
     };
 
-    const result = await insertLoanEvent(eventRow);
-    if (result) setEntry(result);
-    return result;
+    const { data: inserted, error } = await supabase
+      .from(TABLE)
+      .insert(row)
+      .select()
+      .single();
+
+    if (error) {
+      console.warn('[usePoolWaitlist] insert error:', error.message);
+      return null;
+    }
+    if (inserted) setEntry(inserted);
+    return inserted;
   }, [wallet]);
 
   const updateEntry = useCallback(async (updates) => {
     if (!wallet || !entry) return;
     try {
       const { data } = await supabase
-        .from('loan_events')
+        .from(TABLE)
         .update(updates)
         .eq('id', entry.id)
         .select()
@@ -75,11 +89,10 @@ export function usePoolWaitlist() {
   const getAllEntries = useCallback(async () => {
     try {
       const { data } = await supabase
-        .from('loan_events')
+        .from(TABLE)
         .select('*')
-        .eq('event_type', 'waitlist_join')
         .order('created_at', { ascending: false })
-        .limit(200);
+        .limit(500);
       return data || [];
     } catch {
       return [];
