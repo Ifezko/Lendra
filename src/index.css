@@ -55,6 +55,69 @@ body {
   scrollbar-color: rgba(255, 255, 255, 0.1) transparent;
 }
 
+/* ── TipTap rich-text editor ───────────────────────────────────────── */
+.ProseMirror {
+  outline: none;
+  min-height: 420px;
+  padding: 16px 20px;
+  color: #E0E0E8;
+  font-size: 15px;
+  line-height: 1.75;
+}
+.ProseMirror p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  float: left;
+  color: #3B3B4F;
+  pointer-events: none;
+  height: 0;
+}
+.ProseMirror > * + * { margin-top: 0.75em; }
+.ProseMirror h1 { font-size: 2em; font-weight: 800; line-height: 1.2; color: #fff; letter-spacing: -0.02em; margin: 1.2em 0 0.4em; }
+.ProseMirror h2 { font-size: 1.5em; font-weight: 700; line-height: 1.25; color: #fff; letter-spacing: -0.01em; margin: 1.2em 0 0.4em; }
+.ProseMirror h3 { font-size: 1.2em; font-weight: 600; line-height: 1.3; color: #fff; margin: 1em 0 0.3em; }
+.ProseMirror ul { list-style: disc; padding-left: 1.5em; }
+.ProseMirror ol { list-style: decimal; padding-left: 1.5em; }
+.ProseMirror li + li { margin-top: 0.25em; }
+.ProseMirror blockquote {
+  border-left: 3px solid #EC81FF;
+  padding: 10px 18px;
+  margin: 1.25em 0;
+  background: rgba(236,129,255,0.05);
+  border-radius: 0 8px 8px 0;
+  color: #9CA3AF;
+  font-style: italic;
+}
+.ProseMirror code {
+  background: rgba(255,255,255,0.08);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 0.88em;
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  color: #EC81FF;
+}
+.ProseMirror pre {
+  background: #0D0D18;
+  border: 1px solid #1E1E2A;
+  border-radius: 10px;
+  padding: 16px 20px;
+  overflow-x: auto;
+  margin: 1.25em 0;
+}
+.ProseMirror pre code { background: none; padding: 0; color: #E0E0E8; font-size: 0.9em; }
+.ProseMirror hr { border: none; border-top: 1px solid #1E1E2A; margin: 2em 0; }
+.ProseMirror img { max-width: 100%; border-radius: 10px; margin: 1em 0; display: block; }
+.ProseMirror a { color: #EC81FF; text-decoration: underline; cursor: pointer; }
+.ProseMirror a:hover { opacity: 0.85; }
+/* Tables */
+.ProseMirror table { border-collapse: collapse; width: 100%; margin: 1.25em 0; overflow: hidden; border-radius: 8px; }
+.ProseMirror td, .ProseMirror th { border: 1px solid #1E1E2A; padding: 8px 14px; text-align: left; min-width: 100px; }
+.ProseMirror th { background: rgba(255,255,255,0.04); font-weight: 600; color: #fff; }
+.ProseMirror .selectedCell::after { background: rgba(236,129,255,0.1); content: ""; left: 0; right: 0; top: 0; bottom: 0; pointer-events: none; position: absolute; z-index: 2; }
+.ProseMirror .column-resize-handle { background-color: #EC81FF; bottom: -2px; position: absolute; right: -2px; pointer-events: none; top: 0; width: 4px; }
+.ProseMirror p.is-empty::before { color: #3B3B4F; content: attr(data-placeholder); float: left; height: 0; pointer-events: none; }
+/* Selection highlight */
+.ProseMirror ::selection { background: rgba(236,129,255,0.2); }
+
 /* AI Drawer dark scrollbar */
 .ai-drawer-scroll::-webkit-scrollbar {
   width: 5px;

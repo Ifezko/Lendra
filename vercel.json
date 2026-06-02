@@ -1,6 +1,12 @@
 {
   "rewrites": [
     { "source": "/api/(.*)", "destination": "/api/[...path]" },
-    { "source": "/((?!api/).*)", "destination": "/index.html" }
+    { "source": "/blog/sitemap.xml", "destination": "/api/blog-ssr" },
+    { "source": "/blog/feed.xml", "destination": "/api/blog-ssr" },
+    { "source": "/blog/category/:path*", "destination": "/api/blog-ssr" },
+    { "source": "/blog/tag/:path*", "destination": "/api/blog-ssr" },
+    { "source": "/blog/:path*", "destination": "/api/blog-ssr" },
+    { "source": "/blog", "destination": "/api/blog-ssr" },
+    { "source": "/((?!api/|blog).*)", "destination": "/index.html" }
   ]
 }

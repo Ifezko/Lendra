@@ -62,8 +62,8 @@ function TrustSignalCard({ icon: Icon, label, pts, maxPts, value, status, action
       )}
     </motion.div>
   );
-  if (!children && action?.type === 'link') return <Link to={action.to}>{content}</Link>;
-  if (!children && action?.type === 'external') return <a href={action.href} target="_blank" rel="noopener noreferrer">{content}</a>;
+  if (!children && action?.type === 'link') return <Link to={action.to} className="block">{content}</Link>;
+  if (!children && action?.type === 'external') return <a href={action.href} target="_blank" rel="noopener noreferrer" className="block">{content}</a>;
   return content;
 }
 

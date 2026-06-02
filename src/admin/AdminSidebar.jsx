@@ -6,6 +6,7 @@ import {
   LayoutDashboard, BarChart3, Wallet, ArrowDownToLine, Shield,
   DollarSign, Users, Brain, Bell, CreditCard, BadgeCheck, UserCog,
   Settings, X, LogOut, Key, Rocket, Webhook, Database, MessageCircle, Landmark, Server,
+  FileText,
 } from 'lucide-react';
 
 const SLUG = '/ops-okw-7qv3';
@@ -39,6 +40,7 @@ const NAV_SECTIONS = [
       { to: '/social-cards', label: 'Social Cards', icon: CreditCard, roles: ['super_admin', 'admin', 'analyst'] },
       { to: '/x-verification', label: 'X Verification', icon: BadgeCheck, roles: ['super_admin', 'admin', 'analyst'] },
       { to: '/integrations', label: 'Integrations', icon: Webhook, roles: ['super_admin', 'admin', 'analyst'] },
+      { to: '/blog', label: 'Blog CMS', icon: FileText, roles: ['super_admin', 'admin', 'author'] },
     ],
   },
   {
@@ -85,7 +87,10 @@ export default function AdminSidebar({ isOpen, onClose }) {
                 {visibleItems.map((item) => {
                   const Icon = item.icon;
                   const fullPath = `${SLUG}${item.to}`;
-                  const isActive = location.pathname === fullPath || (item.to === '' && location.pathname === SLUG);
+                  const isActive =
+                    location.pathname === fullPath ||
+                    (item.to === '' && location.pathname === SLUG) ||
+                    (item.to !== '' && location.pathname.startsWith(fullPath + '/'));
                   return (
                     <Link
                       key={item.to}

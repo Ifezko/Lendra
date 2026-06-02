@@ -24,6 +24,8 @@ import TelegramPage from './pages/Telegram';
 import PoolPage from './pages/Pool';
 import SystemSettings from './pages/SystemSettings';
 import IntegrationMetrics from './pages/IntegrationMetrics';
+import BlogPosts from './pages/BlogPosts';
+import BlogEditor from './pages/BlogEditor';
 import { Menu, Loader2 } from 'lucide-react';
 
 function AdminHeader({ onMenuToggle }) {
@@ -79,6 +81,13 @@ export default function AdminLayout() {
                 <Route path="x-verification" element={<XVerification />} />
                 <Route path="integrations" element={<IntegrationMetrics />} />
                 <Route path="pool-waitlist" element={<PoolWaitlist />} />
+              </>
+            )}
+            {['super_admin', 'admin', 'author'].includes(role) && (
+              <>
+                <Route path="blog" element={<BlogPosts />} />
+                <Route path="blog/new" element={<BlogEditor />} />
+                <Route path="blog/:id" element={<BlogEditor />} />
               </>
             )}
             {['super_admin', 'admin'].includes(role) && (

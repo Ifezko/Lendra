@@ -1504,5 +1504,698 @@ export async function buildApp(): Promise<FastifyInstance> {
     } catch (e: any) { return reply.code(500).send({ error: e.message }); }
   });
 
+  // ═══════════════════════════════════════════════════════════════════════
+  // ═══ BLOG CMS API + SSR ═══════════════════════════════════════════════
+  // ═══════════════════════════════════════════════════════════════════════
+
+  // ── Admin Blog CRUD ──────────────────────────────────────────────────
+
+  // List all posts (admin)
+  app.get('/api/admin/blog/posts', async (req, reply) => {
+    const admin = await verifyAdmin(req, reply);
+    if (!admin) return;
+    try {
+      const posts = await sbSelect('blog_posts', 'select=*,blog_authors(name,slug),blog_categories(name,slug,color)&order=updated_at.desc');
+      return { posts };
+    } catch (e: any) { return reply.code(500).send({ error: e.message }); }
+  });
+
+  // Get single post (admin)
+  app.get('/api/admin/blog/posts/:id', async (req, reply) => {
+    const admin = await verifyAdmin(req, reply);
+    if (!admin) return;
+    const { id } = req.params as { id: string };
+    try {
+      const posts = await sbSelect('blog_posts', `id=eq.${id}&select=*,blog_authors(name,slug),blog_categories(name,slug,color)`);
+      if (!posts?.length) return reply.code(404).send({ error: 'Post not found' });
+      const tags = await sbSelect('blog_post_tags', `post_id=eq.${id}&select=tag_id,blog_tags(id,name,slug)`);
+      return { post: posts[0], tags: tags?.map((t: any) => t.blog_tags) || [] };
+    } catch (e: any) { return reply.code(500).send({ error: e.message }); }
+  });
+
+  // Create post
+  app.post('/api/admin/blog/posts', async (req, reply) => {
+    const admin = await verifyAdmin(req, reply);
+    if (!admin) return;
+    const body = req.body as any;
+    try {
+      const slug = body.slug || body.title?.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+      const wordCount = (body.content_md || body.content_markdown || '').split(/\s+/).filter(Boolean).length;
+      const readTime = Math.max(1, Math.round(wordCount / 250));
+      // Author role cannot publish — force draft
+      const requestedStatus = body.status || 'draft';
+      const allowedStatus = (requestedStatus === 'published' && !['super_admin', 'admin'].includes(admin.role))
+        ? 'draft'
+        : requestedStatus;
+      const postData = {
+        title: body.title,
+        slug,
+        excerpt: body.excerpt || '',
+        content_html: body.content_html || '',
+        content_md: body.content_md || body.content_markdown || '',
+        author_id: body.author_id || null,
+        category_id: body.category_id || null,
+        status: allowedStatus,
+        is_featured: body.is_featured || false,
+        cover_image_url: body.cover_image_url || null,
+        cover_image_alt: body.cover_image_alt || null,
+        cover_image_caption: body.cover_image_caption || null,
+        og_image_url: body.og_image_url || null,
+        og_image_alt: body.og_image_alt || null,
+        meta_title: body.meta_title || null,
+        meta_description: body.meta_description || null,
+        canonical_url: body.canonical_url || null,
+        quick_answer: body.quick_answer || null,
+        faq_items: body.faq_items || body.faq_json || [],
+        word_count: wordCount,
+        read_time_minutes: readTime,
+        published_at: body.status === 'published' ? (body.published_at || new Date().toISOString()) : null,
+      };
+      const result = await sbInsert('blog_posts', postData);
+      const post = Array.isArray(result) ? result[0] : result;
+      // Handle tags
+      if (body.tag_ids?.length && post?.id) {
+        const tagRows = body.tag_ids.map((tid: string) => ({ post_id: post.id, tag_id: tid }));
+        await sbInsert('blog_post_tags', tagRows);
+      }
+      return { post };
+    } catch (e: any) { return reply.code(500).send({ error: e.message }); }
+  });
+
+  // Update post
+  app.put('/api/admin/blog/posts/:id', async (req, reply) => {
+    const admin = await verifyAdmin(req, reply);
+    if (!admin) return;
+    const { id } = req.params as { id: string };
+    const body = req.body as any;
+    try {
+      // Author role cannot publish
+      if (body.status === 'published' && !['super_admin', 'admin'].includes(admin.role)) {
+        body.status = 'draft';
+      }
+      const wordCount = (body.content_md || body.content_markdown || '').split(/\s+/).filter(Boolean).length;
+      const readTime = Math.max(1, Math.round(wordCount / 250));
+      const updateData: any = {
+        updated_at: new Date().toISOString(),
+        word_count: wordCount,
+        read_time_minutes: readTime,
+      };
+      const fields = ['title', 'slug', 'excerpt', 'content_html', 'content_md', 'author_id', 'category_id',
+        'status', 'is_featured', 'cover_image_url', 'cover_image_alt', 'cover_image_caption',
+        'og_image_url', 'og_image_alt', 'meta_title', 'meta_description', 'canonical_url',
+        'quick_answer', 'faq_items', 'published_at'];
+      for (const f of fields) {
+        if (body[f] !== undefined) updateData[f] = body[f];
+      }
+      if (body.status === 'published' && !updateData.published_at) {
+        updateData.published_at = new Date().toISOString();
+      }
+      const result = await sbUpdate('blog_posts', updateData, `id=eq.${id}`);
+      // Sync tags
+      if (body.tag_ids !== undefined) {
+        await sbFetch(`blog_post_tags?post_id=eq.${id}`, { method: 'DELETE' });
+        if (body.tag_ids.length) {
+          const tagRows = body.tag_ids.map((tid: string) => ({ post_id: id, tag_id: tid }));
+          await sbInsert('blog_post_tags', tagRows);
+        }
+      }
+      return { post: Array.isArray(result) ? result[0] : result };
+    } catch (e: any) { return reply.code(500).send({ error: e.message }); }
+  });
+
+  // Delete post
+  app.delete('/api/admin/blog/posts/:id', async (req, reply) => {
+    const admin = await verifyAdmin(req, reply);
+    if (!admin) return;
+    const { id } = req.params as { id: string };
+    try {
+      await sbFetch(`blog_post_tags?post_id=eq.${id}`, { method: 'DELETE' });
+      await sbFetch(`blog_posts?id=eq.${id}`, { method: 'DELETE' });
+      return { ok: true };
+    } catch (e: any) { return reply.code(500).send({ error: e.message }); }
+  });
+
+  // List authors
+  app.get('/api/admin/blog/authors', async (req, reply) => {
+    const admin = await verifyAdmin(req, reply);
+    if (!admin) return;
+    try { return { authors: await sbSelect('blog_authors', 'order=name.asc') }; }
+    catch (e: any) { return reply.code(500).send({ error: e.message }); }
+  });
+
+  // CRUD authors
+  app.post('/api/admin/blog/authors', async (req, reply) => {
+    const admin = await verifyAdmin(req, reply);
+    if (!admin) return;
+    const body = req.body as any;
+    try {
+      const slug = body.slug || body.name?.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+      const result = await sbInsert('blog_authors', { ...body, slug });
+      return { author: Array.isArray(result) ? result[0] : result };
+    } catch (e: any) { return reply.code(500).send({ error: e.message }); }
+  });
+
+  // List categories
+  app.get('/api/admin/blog/categories', async (req, reply) => {
+    const admin = await verifyAdmin(req, reply);
+    if (!admin) return;
+    try { return { categories: await sbSelect('blog_categories', 'order=sort_order.asc') }; }
+    catch (e: any) { return reply.code(500).send({ error: e.message }); }
+  });
+
+  // Create category
+  app.post('/api/admin/blog/categories', async (req, reply) => {
+    const admin = await verifyAdmin(req, reply);
+    if (!admin) return;
+    const body = req.body as any;
+    if (!body?.name?.trim()) return reply.code(400).send({ error: 'name is required' });
+    try {
+      const slug = body.slug || body.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+      const row = { name: body.name.trim(), slug, color: body.color || '#EC81FF', description: body.description || null, sort_order: body.sort_order ?? 0 };
+      const result = await sbInsert('blog_categories', row);
+      const category = Array.isArray(result) ? result[0] : result;
+      await auditLog(admin.id, 'blog_category_create', { name: category.name });
+      return { category };
+    } catch (e: any) { return reply.code(500).send({ error: e.message }); }
+  });
+
+  // Update category
+  app.put('/api/admin/blog/categories/:id', async (req, reply) => {
+    const admin = await verifyAdmin(req, reply);
+    if (!admin) return;
+    const { id } = req.params as { id: string };
+    const body = req.body as any;
+    try {
+      const updates: any = {};
+      if (body.name) { updates.name = body.name.trim(); updates.slug = body.slug || body.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''); }
+      if (body.color) updates.color = body.color;
+      if (body.description !== undefined) updates.description = body.description;
+      if (body.sort_order !== undefined) updates.sort_order = body.sort_order;
+      const result = await sbUpdate('blog_categories', updates, `id=eq.${id}`);
+      const category = Array.isArray(result) ? result[0] : result;
+      return { category };
+    } catch (e: any) { return reply.code(500).send({ error: e.message }); }
+  });
+
+  // Delete category
+  app.delete('/api/admin/blog/categories/:id', async (req, reply) => {
+    const admin = await verifyAdmin(req, reply);
+    if (!admin) return;
+    if (!['super_admin', 'admin'].includes(admin.role)) return reply.code(403).send({ error: 'Forbidden' });
+    const { id } = req.params as { id: string };
+    try {
+      await sbFetch(`blog_categories?id=eq.${id}`, { method: 'DELETE' });
+      await auditLog(admin.id, 'blog_category_delete', { id });
+      return { ok: true };
+    } catch (e: any) { return reply.code(500).send({ error: e.message }); }
+  });
+
+  // Media upload (base64 → Supabase Storage → media_assets record)
+  app.post('/api/admin/blog/media/upload', async (req, reply) => {
+    const admin = await verifyAdmin(req, reply);
+    if (!admin) return;
+    const body = req.body as any;
+    const { base64, filename, bucket, mime_type, file_size_bytes, width, height, alt_text } = body || {};
+    if (!base64 || !filename || !bucket) return reply.code(400).send({ error: 'base64, filename, and bucket are required' });
+    if (!supabaseConfigured) return reply.code(503).send({ error: 'Supabase not configured' });
+
+    const allowedBuckets = ['blog-covers', 'blog-og', 'blog-inline'];
+    if (!allowedBuckets.includes(bucket)) return reply.code(400).send({ error: 'Invalid bucket name' });
+
+    try {
+      // Decode base64
+      const buffer = Buffer.from(base64, 'base64');
+      if (buffer.length > 8 * 1024 * 1024) return reply.code(400).send({ error: 'File too large (max 8 MB)' });
+
+      const ext = filename.endsWith('.webp') ? '.webp' : filename.replace(/.*\./, '.');
+      const uniqueName = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}${ext}`;
+      const storagePath = `${uniqueName}`;
+      const contentType = mime_type || 'image/webp';
+
+      // Upload to Supabase Storage
+      const uploadUrl = `${SUPABASE_URL}/storage/v1/object/${bucket}/${storagePath}`;
+      const uploadRes = await fetch(uploadUrl, {
+        method: 'POST',
+        headers: {
+          'apikey': SUPABASE_SERVICE_KEY,
+          'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}`,
+          'Content-Type': contentType,
+          'x-upsert': 'true',
+        },
+        body: buffer,
+      });
+      if (!uploadRes.ok) {
+        const errBody = await uploadRes.text().catch(() => '');
+        throw new Error(`Storage upload failed (${uploadRes.status}): ${errBody}`);
+      }
+
+      // Build public URL
+      const publicUrl = `${SUPABASE_URL}/storage/v1/object/public/${bucket}/${storagePath}`;
+
+      // Insert into media_assets
+      const assetRow = {
+        filename,
+        storage_path: storagePath,
+        bucket,
+        url: publicUrl,
+        alt_text: alt_text || '',
+        mime_type: contentType,
+        file_size_bytes: file_size_bytes || buffer.length,
+        width: width || null,
+        height: height || null,
+        uploaded_by: admin.email,
+      };
+      const inserted = await sbInsert('media_assets', assetRow);
+      const asset = Array.isArray(inserted) ? inserted[0] : inserted;
+
+      return { url: publicUrl, asset };
+    } catch (e: any) {
+      console.error('[blog/media/upload] Error:', e.message);
+      return reply.code(500).send({ error: e.message });
+    }
+  });
+
+  // List tags
+  app.get('/api/admin/blog/tags', async (req, reply) => {
+    const admin = await verifyAdmin(req, reply);
+    if (!admin) return;
+    try { return { tags: await sbSelect('blog_tags', 'order=name.asc') }; }
+    catch (e: any) { return reply.code(500).send({ error: e.message }); }
+  });
+
+  // Create tag
+  app.post('/api/admin/blog/tags', async (req, reply) => {
+    const admin = await verifyAdmin(req, reply);
+    if (!admin) return;
+    const body = req.body as any;
+    try {
+      const slug = body.slug || body.name?.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+      const result = await sbInsert('blog_tags', { name: body.name, slug });
+      return { tag: Array.isArray(result) ? result[0] : result };
+    } catch (e: any) { return reply.code(500).send({ error: e.message }); }
+  });
+
+  // ── Public Blog API ──────────────────────────────────────────────────
+
+  app.get('/api/blog/posts', async (req, reply) => {
+    const qs = req.query as any;
+    const limit = Math.min(parseInt(qs.limit) || 20, 100);
+    const offset = parseInt(qs.offset) || 0;
+    const category = qs.category || '';
+    const tag = qs.tag || '';
+    try {
+      let query = `status=eq.published&order=published_at.desc&limit=${limit}&offset=${offset}&select=id,title,slug,excerpt,cover_image_url,cover_image_alt,published_at,read_time_minutes,is_featured,blog_authors(name,slug),blog_categories(name,slug,color)`;
+      if (category) query += `&blog_categories.slug=eq.${category}`;
+      const posts = await sbSelect('blog_posts', query);
+      // If tag filter, we need to join through post_tags
+      if (tag) {
+        const tagRows = await sbSelect('blog_tags', `slug=eq.${tag}&select=id`);
+        if (tagRows?.length) {
+          const postTags = await sbSelect('blog_post_tags', `tag_id=eq.${tagRows[0].id}&select=post_id`);
+          const postIds = new Set(postTags?.map((pt: any) => pt.post_id) || []);
+          return { posts: (posts || []).filter((p: any) => postIds.has(p.id)) };
+        }
+        return { posts: [] };
+      }
+      return { posts: posts || [] };
+    } catch (e: any) { return reply.code(500).send({ error: e.message }); }
+  });
+
+  app.get('/api/blog/posts/:slug', async (req, reply) => {
+    const { slug } = req.params as { slug: string };
+    try {
+      const posts = await sbSelect('blog_posts', `slug=eq.${slug}&status=eq.published&select=*,blog_authors(name,slug,bio,avatar_url,x_handle),blog_categories(name,slug,color)`);
+      if (!posts?.length) return reply.code(404).send({ error: 'Post not found' });
+      const post = posts[0];
+      const tags = await sbSelect('blog_post_tags', `post_id=eq.${post.id}&select=blog_tags(name,slug)`);
+      return { post, tags: tags?.map((t: any) => t.blog_tags) || [] };
+    } catch (e: any) { return reply.code(500).send({ error: e.message }); }
+  });
+
+  app.get('/api/blog/categories', async (_req, reply) => {
+    try { return { categories: await sbSelect('blog_categories', 'order=sort_order.asc') }; }
+    catch (e: any) { return reply.code(500).send({ error: e.message }); }
+  });
+
+  // ── Blog SSR (SEO-friendly server-rendered pages) ────────────────────
+
+  function blogHtmlShell(title: string, description: string, ogImage: string, canonicalPath: string, bodyContent: string, schemaJson?: string) {
+    const fullUrl = `${APP_URL}${canonicalPath}`;
+    return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>${escHtml(title)}</title>
+<meta name="description" content="${escHtml(description)}" />
+<link rel="canonical" href="${fullUrl}" />
+
+<!-- Open Graph -->
+<meta property="og:type" content="article" />
+<meta property="og:title" content="${escHtml(title)}" />
+<meta property="og:description" content="${escHtml(description)}" />
+<meta property="og:url" content="${fullUrl}" />
+${ogImage ? `<meta property="og:image" content="${escHtml(ogImage)}" />` : ''}
+<meta property="og:site_name" content="Lendra" />
+
+<!-- Twitter -->
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:title" content="${escHtml(title)}" />
+<meta name="twitter:description" content="${escHtml(description)}" />
+${ogImage ? `<meta name="twitter:image" content="${escHtml(ogImage)}" />` : ''}
+<meta name="twitter:site" content="@lendrafinance" />
+
+<link rel="icon" href="${APP_URL}/favicon.ico" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+
+${schemaJson ? `<script type="application/ld+json">${schemaJson}</script>` : ''}
+
+<style>
+  :root { --brand-bg: #0A0A0F; --brand-accent: #EC81FF; --brand-card: #12121A; --brand-border: #1E1E2A; --brand-text: #E0E0E8; --brand-muted: #ADADB5; }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family: 'Inter', system-ui, sans-serif; background: var(--brand-bg); color: var(--brand-text); -webkit-font-smoothing: antialiased; }
+  a { color: var(--brand-accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+
+  .blog-header { position:sticky; top:0; z-index:50; background:rgba(10,10,15,0.85); backdrop-filter:blur(12px); border-bottom:1px solid var(--brand-border); }
+  .blog-header-inner { max-width:1200px; margin:0 auto; padding:12px 24px; display:flex; align-items:center; justify-content:space-between; }
+  .blog-header-logo { display:flex; align-items:center; gap:10px; text-decoration:none; }
+  .blog-header-logo img { width:32px; height:32px; border-radius:8px; }
+  .blog-header-logo span { font-weight:700; font-size:18px; color:#fff; }
+  .blog-header-logo small { font-size:13px; color:var(--brand-muted); margin-left:4px; font-weight:400; }
+  .blog-nav { display:flex; gap:20px; align-items:center; }
+  .blog-nav a { color:var(--brand-muted); font-size:14px; font-weight:500; transition:color 0.15s; }
+  .blog-nav a:hover { color:#fff; text-decoration:none; }
+  .btn-app { background:var(--brand-accent); color:#fff; padding:8px 20px; border-radius:10px; font-weight:600; font-size:13px; display:inline-flex; }
+  .btn-app:hover { opacity:0.9; text-decoration:none; }
+
+  .blog-container { max-width:800px; margin:0 auto; padding:40px 24px 80px; }
+  .blog-list-container { max-width:1200px; margin:0 auto; padding:40px 24px 80px; }
+
+  .blog-hero { text-align:center; margin-bottom:48px; }
+  .blog-hero h1 { font-size:40px; font-weight:800; letter-spacing:-0.03em; margin-bottom:12px; background:linear-gradient(135deg,#fff 0%,var(--brand-accent) 100%); -webkit-background-clip:text; -webkit-text-fill-color:transparent; }
+  .blog-hero p { color:var(--brand-muted); font-size:17px; max-width:600px; margin:0 auto; }
+
+  .posts-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(340px, 1fr)); gap:24px; }
+  .post-card { background:var(--brand-card); border:1px solid var(--brand-border); border-radius:16px; overflow:hidden; transition:border-color 0.2s, transform 0.2s; }
+  .post-card:hover { border-color:rgba(236,129,255,0.3); transform:translateY(-2px); }
+  .post-card a { text-decoration:none; color:inherit; }
+  .post-card-img { width:100%; height:200px; object-fit:cover; background:var(--brand-border); }
+  .post-card-body { padding:20px; }
+  .post-card-meta { display:flex; align-items:center; gap:8px; margin-bottom:10px; font-size:12px; color:var(--brand-muted); }
+  .post-card-cat { display:inline-block; padding:2px 10px; border-radius:999px; font-size:11px; font-weight:600; }
+  .post-card h2 { font-size:18px; font-weight:700; color:#fff; margin-bottom:8px; line-height:1.35; }
+  .post-card p { font-size:14px; color:var(--brand-muted); line-height:1.6; }
+
+  .article-header { margin-bottom:32px; }
+  .article-cat { display:inline-block; padding:3px 12px; border-radius:999px; font-size:12px; font-weight:600; margin-bottom:16px; }
+  .article-header h1 { font-size:36px; font-weight:800; color:#fff; line-height:1.2; letter-spacing:-0.02em; margin-bottom:16px; }
+  .article-meta { display:flex; align-items:center; gap:12px; color:var(--brand-muted); font-size:14px; flex-wrap:wrap; }
+  .article-meta .dot { width:4px; height:4px; border-radius:50%; background:var(--brand-muted); }
+
+  .article-cover { width:100%; border-radius:16px; margin-bottom:32px; max-height:450px; object-fit:cover; }
+
+  .article-body { font-size:17px; line-height:1.8; color:var(--brand-text); }
+  .article-body h2 { font-size:26px; font-weight:700; color:#fff; margin:40px 0 16px; }
+  .article-body h3 { font-size:20px; font-weight:600; color:#fff; margin:32px 0 12px; }
+  .article-body p { margin-bottom:20px; }
+  .article-body ul, .article-body ol { margin:0 0 20px 24px; }
+  .article-body li { margin-bottom:8px; }
+  .article-body blockquote { border-left:3px solid var(--brand-accent); padding:12px 20px; margin:24px 0; background:rgba(236,129,255,0.05); border-radius:0 8px 8px 0; font-style:italic; color:var(--brand-muted); }
+  .article-body code { background:rgba(255,255,255,0.06); padding:2px 6px; border-radius:4px; font-size:0.9em; }
+  .article-body pre { background:#0D0D18; border:1px solid var(--brand-border); border-radius:12px; padding:20px; overflow-x:auto; margin:24px 0; }
+  .article-body pre code { background:none; padding:0; }
+  .article-body img { max-width:100%; border-radius:12px; margin:24px 0; }
+  .article-body a { color:var(--brand-accent); text-decoration:underline; }
+
+  .article-tags { display:flex; flex-wrap:wrap; gap:8px; margin-top:32px; padding-top:24px; border-top:1px solid var(--brand-border); }
+  .article-tag { background:rgba(236,129,255,0.08); color:var(--brand-accent); padding:4px 12px; border-radius:999px; font-size:12px; font-weight:500; }
+
+  .faq-section { margin-top:48px; padding-top:32px; border-top:1px solid var(--brand-border); }
+  .faq-section h2 { font-size:24px; font-weight:700; color:#fff; margin-bottom:20px; }
+  .faq-item { margin-bottom:16px; background:var(--brand-card); border:1px solid var(--brand-border); border-radius:12px; padding:16px 20px; }
+  .faq-item h3 { font-size:15px; font-weight:600; color:#fff; margin-bottom:8px; }
+  .faq-item p { font-size:14px; color:var(--brand-muted); line-height:1.6; }
+
+  .blog-footer { border-top:1px solid var(--brand-border); padding:32px 24px; text-align:center; color:var(--brand-muted); font-size:13px; }
+
+  @media (max-width:640px) {
+    .blog-hero h1 { font-size:28px; }
+    .posts-grid { grid-template-columns:1fr; }
+    .article-header h1 { font-size:26px; }
+    .article-body { font-size:16px; }
+  }
+</style>
+</head>
+<body>
+  <header class="blog-header">
+    <div class="blog-header-inner">
+      <a href="${APP_URL}/blog" class="blog-header-logo">
+        <img src="${APP_URL}/assets/lender-logo5x.png" alt="Lendra" />
+        <span>Lendra</span>
+        <small>Blog</small>
+      </a>
+      <nav class="blog-nav">
+        <a href="${APP_URL}/blog">Articles</a>
+        <a href="${APP_URL}" class="btn-app">Launch App</a>
+      </nav>
+    </div>
+  </header>
+  ${bodyContent}
+  <footer class="blog-footer">
+    <p>&copy; ${new Date().getFullYear()} Lendra Finance. Your wallet is your credit score.</p>
+  </footer>
+</body>
+</html>`;
+  }
+
+  function escHtml(str: string): string {
+    return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
+  function formatDate(d: string): string {
+    try { return new Date(d).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }); }
+    catch { return d; }
+  }
+
+  // SSR: Blog listing page
+  app.get('/blog', async (_req, reply) => {
+    try {
+      const posts = await sbSelect('blog_posts', 'status=eq.published&order=published_at.desc&limit=50&select=id,title,slug,excerpt,cover_image_url,cover_image_alt,published_at,read_time_minutes,is_featured,blog_authors(name),blog_categories(name,slug,color)');
+      const categories = await sbSelect('blog_categories', 'order=sort_order.asc');
+
+      let cardsHtml = '';
+      for (const p of (posts || [])) {
+        const cat = p.blog_categories;
+        const catBadge = cat ? `<span class="post-card-cat" style="background:${cat.color}20;color:${cat.color}">${escHtml(cat.name)}</span>` : '';
+        const imgHtml = p.cover_image_url ? `<img class="post-card-img" src="${escHtml(p.cover_image_url)}" alt="${escHtml(p.cover_image_alt || p.title)}" loading="lazy" />` : `<div class="post-card-img" style="background:linear-gradient(135deg,#12121A,#1a1a2e)"></div>`;
+        cardsHtml += `<article class="post-card"><a href="${APP_URL}/blog/${escHtml(p.slug)}">${imgHtml}<div class="post-card-body"><div class="post-card-meta">${catBadge}<span>${formatDate(p.published_at)}</span><span>&middot;</span><span>${p.read_time_minutes} min read</span></div><h2>${escHtml(p.title)}</h2>${p.excerpt ? `<p>${escHtml(p.excerpt)}</p>` : ''}</div></a></article>`;
+      }
+
+      if (!cardsHtml) {
+        cardsHtml = '<div style="text-align:center;padding:60px 20px;color:var(--brand-muted)"><p style="font-size:18px;margin-bottom:8px">No articles yet</p><p>Check back soon for insights on DeFi credit scoring, Solana, and protocol updates.</p></div>';
+      }
+
+      const bodyContent = `<div class="blog-list-container"><div class="blog-hero"><h1>Lendra Blog</h1><p>Protocol updates, DeFi research, and engineering deep dives from the Lendra team.</p></div><div class="posts-grid">${cardsHtml}</div></div>`;
+
+      const html = blogHtmlShell(
+        'Lendra Blog — DeFi Credit Protocol Insights',
+        'Protocol updates, DeFi research, and engineering deep dives from the Lendra team. Your wallet is your credit score.',
+        '',
+        '/blog',
+        bodyContent
+      );
+      reply.type('text/html').send(html);
+    } catch (e: any) {
+      reply.code(500).type('text/html').send(`<h1>Error</h1><p>${escHtml(e.message)}</p>`);
+    }
+  });
+
+  // SSR: Single blog post — MUST be registered AFTER /blog/category/:c and /blog/tag/:t
+  app.get('/blog/:slug', async (req, reply) => {
+    const { slug } = req.params as { slug: string };
+    try {
+      const posts = await sbSelect('blog_posts', `slug=eq.${slug}&status=eq.published&select=*,blog_authors(name,slug,bio,avatar_url,x_handle),blog_categories(name,slug,color)`);
+      if (!posts?.length) {
+        return reply.code(404).type('text/html').send(blogHtmlShell('Not Found — Lendra Blog', 'Article not found.', '', `/blog/${slug}`, '<div class="blog-container" style="text-align:center;padding:80px 20px"><h1 style="font-size:32px;color:#fff;margin-bottom:12px">Article not found</h1><p style="color:var(--brand-muted)">This article may have been moved or deleted.</p><p style="margin-top:20px"><a href="' + APP_URL + '/blog">Back to Blog</a></p></div>'));
+      }
+      const post = posts[0];
+      const tagRows = await sbSelect('blog_post_tags', `post_id=eq.${post.id}&select=blog_tags(name,slug)`);
+      const tags = tagRows?.map((t: any) => t.blog_tags).filter(Boolean) || [];
+      const author = post.blog_authors;
+      const cat = post.blog_categories;
+
+      // Build article body
+      let articleHtml = '<div class="article-header">';
+      if (cat) articleHtml += `<span class="article-cat" style="background:${cat.color}20;color:${cat.color}">${escHtml(cat.name)}</span>`;
+      articleHtml += `<h1>${escHtml(post.meta_title || post.title)}</h1>`;
+      articleHtml += '<div class="article-meta">';
+      if (author) articleHtml += `<span>By ${escHtml(author.name)}</span>`;
+      if (post.published_at) articleHtml += `<span class="dot"></span><span>${formatDate(post.published_at)}</span>`;
+      articleHtml += `<span class="dot"></span><span>${post.read_time_minutes} min read</span>`;
+      articleHtml += '</div></div>';
+
+      if (post.cover_image_url) {
+        articleHtml += `<img class="article-cover" src="${escHtml(post.cover_image_url)}" alt="${escHtml(post.cover_image_alt || post.title)}" />`;
+      }
+
+      // Quick answer box
+      if (post.quick_answer) {
+        articleHtml += `<div style="background:rgba(236,129,255,0.06);border:1px solid rgba(236,129,255,0.15);border-radius:12px;padding:16px 20px;margin-bottom:32px"><p style="font-size:13px;font-weight:600;color:var(--brand-accent);margin-bottom:6px">Quick Answer</p><p style="font-size:15px;color:var(--brand-text);line-height:1.6">${escHtml(post.quick_answer)}</p></div>`;
+      }
+
+      articleHtml += `<div class="article-body">${post.content_html}</div>`;
+
+      // Tags
+      if (tags.length) {
+        articleHtml += '<div class="article-tags">';
+        for (const tag of tags) articleHtml += `<span class="article-tag">#${escHtml(tag.name)}</span>`;
+        articleHtml += '</div>';
+      }
+
+      // FAQ
+      const faqs = post.faq_items || [];
+      if (faqs.length) {
+        articleHtml += '<div class="faq-section"><h2>Frequently Asked Questions</h2>';
+        for (const faq of faqs) {
+          articleHtml += `<div class="faq-item"><h3>${escHtml(faq.question || '')}</h3><p>${escHtml(faq.answer || '')}</p></div>`;
+        }
+        articleHtml += '</div>';
+      }
+
+      // Schema.org
+      const schema = {
+        '@context': 'https://schema.org',
+        '@type': 'BlogPosting',
+        headline: post.meta_title || post.title,
+        description: post.meta_description || post.excerpt || '',
+        image: post.og_image_url || post.cover_image_url || '',
+        datePublished: post.published_at,
+        dateModified: post.updated_at,
+        author: author ? { '@type': 'Person', name: author.name } : undefined,
+        publisher: { '@type': 'Organization', name: 'Lendra Finance', url: APP_URL },
+        mainEntityOfPage: { '@type': 'WebPage', '@id': `${APP_URL}/blog/${post.slug}` },
+      };
+      const faqSchema = faqs.length ? {
+        '@context': 'https://schema.org',
+        '@type': 'FAQPage',
+        mainEntity: faqs.map((f: any) => ({
+          '@type': 'Question',
+          name: f.question,
+          acceptedAnswer: { '@type': 'Answer', text: f.answer },
+        })),
+      } : null;
+
+      const schemaJsonStr = JSON.stringify(schema) + (faqSchema ? `</script><script type="application/ld+json">${JSON.stringify(faqSchema)}` : '');
+
+      const html = blogHtmlShell(
+        (post.meta_title || post.title) + ' — Lendra Blog',
+        post.meta_description || post.excerpt || '',
+        post.og_image_url || post.cover_image_url || '',
+        `/blog/${post.slug}`,
+        `<div class="blog-container">${articleHtml}</div>`,
+        schemaJsonStr
+      );
+      reply.type('text/html').send(html);
+    } catch (e: any) {
+      reply.code(500).type('text/html').send(`<h1>Error</h1><p>${escHtml(e.message)}</p>`);
+    }
+  });
+
+  // SSR: Blog by category
+  app.get('/blog/category/:category', async (req, reply) => {
+    const { category } = req.params as { category: string };
+    try {
+      const categories = await sbSelect('blog_categories', 'order=sort_order.asc');
+      const cat = (categories || []).find((c: any) => c.slug === category);
+      if (!cat) {
+        return reply.code(404).type('text/html').send(blogHtmlShell('Not Found — Lendra Blog', 'Category not found.', '', `/blog/category/${category}`, '<div class="blog-container" style="text-align:center;padding:80px 20px"><h1 style="font-size:32px;color:#fff;margin-bottom:12px">Category not found</h1><p style="color:var(--brand-muted)">This category does not exist.</p><p style="margin-top:20px"><a href="' + APP_URL + '/blog">Back to Blog</a></p></div>'));
+      }
+
+      const posts = await sbSelect('blog_posts', `status=eq.published&category_id=eq.${cat.id}&order=published_at.desc&limit=50&select=id,title,slug,excerpt,cover_image_url,cover_image_alt,published_at,read_time_minutes,is_featured,blog_authors(name),blog_categories(name,slug,color)`);
+
+      let cardsHtml = '';
+      for (const p of (posts || [])) {
+        const pCat = p.blog_categories;
+        const catBadge = pCat ? `<span class="post-card-cat" style="background:${pCat.color}20;color:${pCat.color}">${escHtml(pCat.name)}</span>` : '';
+        const imgHtml = p.cover_image_url ? `<img class="post-card-img" src="${escHtml(p.cover_image_url)}" alt="${escHtml(p.cover_image_alt || p.title)}" loading="lazy" />` : `<div class="post-card-img" style="background:linear-gradient(135deg,#12121A,#1a1a2e)"></div>`;
+        cardsHtml += `<article class="post-card"><a href="${APP_URL}/blog/${escHtml(p.slug)}">${imgHtml}<div class="post-card-body"><div class="post-card-meta">${catBadge}<span>${formatDate(p.published_at)}</span><span>&middot;</span><span>${p.read_time_minutes} min read</span></div><h2>${escHtml(p.title)}</h2>${p.excerpt ? `<p>${escHtml(p.excerpt)}</p>` : ''}</div></a></article>`;
+      }
+      if (!cardsHtml) {
+        cardsHtml = '<div style="text-align:center;padding:60px 20px;color:var(--brand-muted)"><p style="font-size:18px;margin-bottom:8px">No articles in this category yet</p><p>Check back soon.</p></div>';
+      }
+      const bodyContent = `<div class="blog-list-container"><div class="blog-hero"><h1>${escHtml(cat.name)}</h1><p>${escHtml(cat.description || `Articles about ${cat.name} from the Lendra team.`)}</p></div><div class="posts-grid">${cardsHtml}</div></div>`;
+      const html = blogHtmlShell(`${cat.name} — Lendra Blog`, cat.description || `${cat.name} articles from Lendra.`, '', `/blog/category/${category}`, bodyContent);
+      reply.type('text/html').send(html);
+    } catch (e: any) {
+      reply.code(500).type('text/html').send(`<h1>Error</h1><p>${escHtml(e.message)}</p>`);
+    }
+  });
+
+  // SSR: Blog by tag
+  app.get('/blog/tag/:tag', async (req, reply) => {
+    const { tag } = req.params as { tag: string };
+    try {
+      const tagRows = await sbSelect('blog_tags', `slug=eq.${tag}&select=id,name,slug&limit=1`);
+      const tagObj = tagRows?.[0];
+      if (!tagObj) {
+        return reply.code(404).type('text/html').send(blogHtmlShell('Not Found — Lendra Blog', 'Tag not found.', '', `/blog/tag/${tag}`, '<div class="blog-container" style="text-align:center;padding:80px 20px"><h1 style="font-size:32px;color:#fff;margin-bottom:12px">Tag not found</h1><p style="color:var(--brand-muted)">This tag does not exist.</p><p style="margin-top:20px"><a href="' + APP_URL + '/blog">Back to Blog</a></p></div>'));
+      }
+
+      const postTags = await sbSelect('blog_post_tags', `tag_id=eq.${tagObj.id}&select=post_id`);
+      const postIds = (postTags || []).map((pt: any) => pt.post_id);
+
+      let posts: any[] = [];
+      if (postIds.length > 0) {
+        posts = await sbSelect('blog_posts', `status=eq.published&id=in.(${postIds.join(',')})&order=published_at.desc&limit=50&select=id,title,slug,excerpt,cover_image_url,cover_image_alt,published_at,read_time_minutes,is_featured,blog_authors(name),blog_categories(name,slug,color)`) || [];
+      }
+
+      let cardsHtml = '';
+      for (const p of posts) {
+        const cat = p.blog_categories;
+        const catBadge = cat ? `<span class="post-card-cat" style="background:${cat.color}20;color:${cat.color}">${escHtml(cat.name)}</span>` : '';
+        const imgHtml = p.cover_image_url ? `<img class="post-card-img" src="${escHtml(p.cover_image_url)}" alt="${escHtml(p.cover_image_alt || p.title)}" loading="lazy" />` : `<div class="post-card-img" style="background:linear-gradient(135deg,#12121A,#1a1a2e)"></div>`;
+        cardsHtml += `<article class="post-card"><a href="${APP_URL}/blog/${escHtml(p.slug)}">${imgHtml}<div class="post-card-body"><div class="post-card-meta">${catBadge}<span>${formatDate(p.published_at)}</span><span>&middot;</span><span>${p.read_time_minutes} min read</span></div><h2>${escHtml(p.title)}</h2>${p.excerpt ? `<p>${escHtml(p.excerpt)}</p>` : ''}</div></a></article>`;
+      }
+      if (!cardsHtml) {
+        cardsHtml = '<div style="text-align:center;padding:60px 20px;color:var(--brand-muted)"><p style="font-size:18px;margin-bottom:8px">No articles with this tag yet</p><p>Check back soon.</p></div>';
+      }
+      const bodyContent = `<div class="blog-list-container"><div class="blog-hero"><h1>#${escHtml(tagObj.name)}</h1><p>Articles tagged with "${escHtml(tagObj.name)}" from the Lendra team.</p></div><div class="posts-grid">${cardsHtml}</div></div>`;
+      const html = blogHtmlShell(`#${tagObj.name} — Lendra Blog`, `Articles tagged "${tagObj.name}" from Lendra.`, '', `/blog/tag/${tag}`, bodyContent);
+      reply.type('text/html').send(html);
+    } catch (e: any) {
+      reply.code(500).type('text/html').send(`<h1>Error</h1><p>${escHtml(e.message)}</p>`);
+    }
+  });
+
+  // Sitemap for blog
+  app.get('/blog/sitemap.xml', async (_req, reply) => {
+    try {
+      const posts = await sbSelect('blog_posts', 'status=eq.published&select=slug,updated_at&order=updated_at.desc');
+      let xml = '<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n';
+      xml += `<url><loc>${APP_URL}/blog</loc><changefreq>daily</changefreq><priority>0.8</priority></url>\n`;
+      for (const p of (posts || [])) {
+        xml += `<url><loc>${APP_URL}/blog/${p.slug}</loc><lastmod>${new Date(p.updated_at).toISOString().split('T')[0]}</lastmod><changefreq>weekly</changefreq><priority>0.7</priority></url>\n`;
+      }
+      xml += '</urlset>';
+      reply.type('application/xml').send(xml);
+    } catch { reply.type('application/xml').send('<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"></urlset>'); }
+  });
+
+  // RSS Feed
+  app.get('/blog/feed.xml', async (_req, reply) => {
+    try {
+      const posts = await sbSelect('blog_posts', 'status=eq.published&order=published_at.desc&limit=20&select=title,slug,excerpt,published_at,blog_authors(name)');
+      let rss = `<?xml version="1.0" encoding="UTF-8"?>\n<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">\n<channel>\n<title>Lendra Blog</title>\n<link>${APP_URL}/blog</link>\n<description>Protocol updates, DeFi research, and engineering deep dives from the Lendra team.</description>\n<atom:link href="${APP_URL}/blog/feed.xml" rel="self" type="application/rss+xml" />\n`;
+      for (const p of (posts || [])) {
+        rss += `<item><title>${escHtml(p.title)}</title><link>${APP_URL}/blog/${p.slug}</link><guid>${APP_URL}/blog/${p.slug}</guid><pubDate>${new Date(p.published_at).toUTCString()}</pubDate>${p.excerpt ? `<description>${escHtml(p.excerpt)}</description>` : ''}${p.blog_authors ? `<author>${escHtml(p.blog_authors.name)}</author>` : ''}</item>\n`;
+      }
+      rss += '</channel>\n</rss>';
+      reply.type('application/rss+xml').send(rss);
+    } catch { reply.type('application/rss+xml').send('<?xml version="1.0" encoding="UTF-8"?><rss version="2.0"><channel><title>Lendra Blog</title></channel></rss>'); }
+  });
+
   return app;
 }
