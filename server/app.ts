@@ -3,7 +3,7 @@ import cors from '@fastify/cors';
 import { Redis } from '@upstash/redis';
 import { randomUUID, getRandomValues, createHash, scryptSync, randomBytes, timingSafeEqual } from 'crypto';
 
-// ── Environment ──────────────────────────────────────────────────────
+// ?? Environment ??????????????????????????????????????????????????????
 
 const SUPABASE_URL = process.env.VITE_SUPABASE_URL || '';
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
@@ -33,7 +33,7 @@ try {
 
 const supabaseConfigured = !!(SUPABASE_URL && SUPABASE_SERVICE_KEY);
 
-// ── QuickNode RPC URL resolver ───────────────────────────────────────
+// ?? QuickNode RPC URL resolver ???????????????????????????????????????
 function getQuicknodeHttpUrl(): string | null {
   const httpUrl = process.env.QUICKNODE_HTTP_URL;
   if (httpUrl) return httpUrl;
@@ -42,7 +42,7 @@ function getQuicknodeHttpUrl(): string | null {
   return null;
 }
 
-// ── Supabase REST helpers ────────────────────────────────────────────
+// ?? Supabase REST helpers ????????????????????????????????????????????
 
 async function sbFetch(path: string, opts: RequestInit = {}) {
   if (!supabaseConfigured) throw new Error('Supabase not configured');
@@ -69,7 +69,7 @@ const sbSelect = (table: string, qs = '') => sbFetch(`${table}${qs ? '?' + qs : 
 const sbUpsert = (table: string, data: any) =>
   sbFetch(table, { method: 'POST', headers: { 'Prefer': 'return=representation,resolution=merge-duplicates' } as any, body: JSON.stringify(data) });
 
-// ── Known DeFi Protocol Program IDs (Solana) ─────────────────────────
+// ?? Known DeFi Protocol Program IDs (Solana) ?????????????????????????
 const KNOWN_PROTOCOLS: Record<string, string> = {
   'LBUZKhRxPF3XUpBCjp4YzTKgLLjeyNZ2FLJhpBYQ2Hh': 'Meteora',
   'Eo7WjKq67rjJQSZxS6z3YkapzY3eMj6Xy8X5EkAW7vAR': 'Meteora',
@@ -93,7 +93,7 @@ const USDC_MINT = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
 const USDT_MINT = 'Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB';
 const WSOL_MINT = 'So11111111111111111111111111111111111111112';
 
-// ── .sol / SNS Reverse Lookup ─────────────────────────────────────────
+// ?? .sol / SNS Reverse Lookup ?????????????????????????????????????????
 async function lookupSolDomain(wallet: string): Promise<string | null> {
   try {
     const ctrl = new AbortController();
@@ -115,7 +115,7 @@ async function lookupSolDomain(wallet: string): Promise<string | null> {
   }
 }
 
-// ── SPL Token Balance Fetcher ─────────────────────────────────────────
+// ?? SPL Token Balance Fetcher ?????????????????????????????????????????
 async function fetchSplTokenBalances(rpcUrl: string, wallet: string): Promise<{
   usdc: number; usdt: number; all: Record<string, number>;
 }> {
@@ -140,7 +140,7 @@ async function fetchSplTokenBalances(rpcUrl: string, wallet: string): Promise<{
   }
 }
 
-// ── Telegram helper ──────────────────────────────────────────────────
+// ?? Telegram helper ??????????????????????????????????????????????????
 
 async function sendTG(chatId: string, text: string): Promise<boolean> {
   if (!TELEGRAM_BOT_TOKEN) return false;
@@ -154,7 +154,7 @@ async function sendTG(chatId: string, text: string): Promise<boolean> {
   } catch { return false; }
 }
 
-// ── Admin auth helpers ───────────────────────────────────────────────
+// ?? Admin auth helpers ???????????????????????????????????????????????
 
 const ADMIN_EMAIL_ENV = process.env.ADMIN_EMAIL || '';
 const ADMIN_PASSWORD_ENV = process.env.ADMIN_PASSWORD || '';
@@ -255,13 +255,13 @@ async function auditLog(adminId: string | null, action: string, metadata: any = 
   }
 }
 
-// ── PKCE helpers ─────────────────────────────────────────────────────
+// ?? PKCE helpers ?????????????????????????????????????????????????????
 
 function genCodeVerifier(): string { const a = new Uint8Array(32); getRandomValues(a); return Buffer.from(a).toString('base64url'); }
 function genCodeChallenge(v: string): string { return createHash('sha256').update(v).digest('base64url'); }
 function genSecureCode(len = 32): string { const a = new Uint8Array(len); getRandomValues(a); return Buffer.from(a).toString('hex').slice(0, len); }
 
-// ── Score computation constants (server-side, mirrors useCreditScore) ─
+// ?? Score computation constants (server-side, mirrors useCreditScore) ?
 
 const BASE_SCORE = 100;
 const MAX_SCORE_LIMIT = 1000;
@@ -299,15 +299,32 @@ function getLoanLevelServer(score: number, cleanRepayments: number, hasXVer: boo
 }
 
 async function serverRpc(rpcUrl: string, method: string, params: any[] = []) {
-  const res = await fetch(rpcUrl, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }),
-  });
-  if (!res.ok) throw new Error(`RPC ${method} failed: ${res.status}`);
-  const data = await res.json();
-  if (data.error) throw new Error(data.error.message || `RPC error: ${method}`);
-  return data.result;
+  const maxAttempts = 5;
+  let lastErr: any = null;
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    if (attempt > 0) {
+      const delay = Math.min(2500, 300 * Math.pow(2, attempt - 1)) + Math.floor(Math.random() * 200);
+      await new Promise((r) => setTimeout(r, delay));
+    }
+    let res: Response;
+    try {
+      res = await fetch(rpcUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }),
+      });
+    } catch (e) { lastErr = e; continue; }
+    // Retry transient rate-limit / server errors with backoff
+    if (res.status === 429 || res.status >= 500) {
+      lastErr = new Error(`RPC ${method} failed: ${res.status}`);
+      continue;
+    }
+    if (!res.ok) throw new Error(`RPC ${method} failed: ${res.status}`);
+    const data = await res.json();
+    if (data.error) throw new Error(data.error.message || `RPC error: ${method}`);
+    return data.result;
+  }
+  throw lastErr || new Error(`RPC ${method} failed`);
 }
 
 async function persistScanServer(wallet: string, result: any, repStats: any, prevScan: any) {
@@ -395,15 +412,15 @@ async function persistScanServer(wallet: string, result: any, repStats: any, pre
   }
 }
 
-// ══════════════════════════════════════════════════════════════════════
-// BUILD APP — export for both local dev and Vercel serverless
-// ══════════════════════════════════════════════════════════════════════
+// ??????????????????????????????????????????????????????????????????????
+// BUILD APP - export for both local dev and Vercel serverless
+// ??????????????????????????????????????????????????????????????????????
 
 export async function buildApp(): Promise<FastifyInstance> {
   const app = Fastify({ logger: false });
   await app.register(cors, { origin: true });
 
-  // ── HEALTH CHECK ─────────────────────────────────────────────────
+  // ?? HEALTH CHECK ?????????????????????????????????????????????????
   app.get('/api/health', async () => ({
     ok: true,
     service: 'lendra-api',
@@ -414,7 +431,7 @@ export async function buildApp(): Promise<FastifyInstance> {
     timestamp: new Date().toISOString(),
   }));
 
-  // ── QUICKNODE RPC PROXY ──────────────────────────────────────────
+  // ?? QUICKNODE RPC PROXY ??????????????????????????????????????????
   app.post('/api/quicknode/rpc/solana', async (req, reply) => {
     const rpcUrl = getQuicknodeHttpUrl();
     if (!rpcUrl) {
@@ -446,7 +463,7 @@ export async function buildApp(): Promise<FastifyInstance> {
     ok: true, service: 'quicknode-rpc-solana', message: 'Use POST with JSON-RPC body',
   }));
 
-  // ── SCORE SCAN (full server-side wallet scoring) ─────────────────
+  // ?? SCORE SCAN (full server-side wallet scoring) ?????????????????
   app.get('/api/score/scan', async () => {
     const rpcUrl = getQuicknodeHttpUrl();
     return { ok: true, service: 'score-scan', message: 'Use POST to scan wallet', configured: !!rpcUrl && supabaseConfigured };
@@ -467,20 +484,20 @@ export async function buildApp(): Promise<FastifyInstance> {
     }
 
     try {
-      // ── Fetch SOL price ───────────────────────────────────────────
+      // ?? Fetch SOL price ???????????????????????????????????????????
       let solPrice = 0;
       try {
         const pr = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=solana&vs_currencies=usd');
         if (pr.ok) { const pd = await pr.json(); solPrice = pd?.solana?.usd || 0; }
       } catch { /* non-critical */ }
 
-      // ── RPC: getBalance ───────────────────────────────────────────
+      // ?? RPC: getBalance ???????????????????????????????????????????
       const balanceResult = await serverRpc(rpcUrl, 'getBalance', [wallet_address, { commitment: 'confirmed' }]);
       const balanceLamports = balanceResult?.value ?? 0;
       const balanceSol = balanceLamports / 1e9;
       const balanceUsd = balanceSol * solPrice;
 
-      // ── RPC: getSignaturesForAddress ──────────────────────────────
+      // ?? RPC: getSignaturesForAddress ??????????????????????????????
       const signatures = await serverRpc(rpcUrl, 'getSignaturesForAddress', [wallet_address, { limit: 1000, commitment: 'confirmed' }]);
       const txCount = signatures?.length || 0;
 
@@ -490,7 +507,7 @@ export async function buildApp(): Promise<FastifyInstance> {
         creditMaturity: 0, borrowGrowth: 0,
       };
 
-      // Empty wallet → base score
+      // Empty wallet ? base score
       if (txCount === 0) {
         const tier = getTierServer(BASE_SCORE);
         const loanLevel = getLoanLevelServer(BASE_SCORE, 0, false);
@@ -504,12 +521,12 @@ export async function buildApp(): Promise<FastifyInstance> {
         return { ok: true, data: result };
       }
 
-      // ── Wallet age ────────────────────────────────────────────────
+      // ?? Wallet age ????????????????????????????????????????????????
       const oldestTx = signatures[signatures.length - 1];
       const oldestTime = oldestTx?.blockTime ? oldestTx.blockTime * 1000 : Date.now();
       const walletAgeDays = Math.floor((Date.now() - oldestTime) / (1000 * 60 * 60 * 24));
 
-      // ── Monthly activity & recent spend ───────────────────────────
+      // ?? Monthly activity & recent spend ???????????????????????????
       const monthSet = new Set<string>();
       const ninetyDaysAgo = Date.now() - 90 * 24 * 60 * 60 * 1000;
       let recentTxCount = 0;
@@ -523,12 +540,12 @@ export async function buildApp(): Promise<FastifyInstance> {
       const monthlyActivity = monthSet.size;
       const spend90d = recentTxCount * 0.015 * solPrice;
 
-      // ── Protocol diversity + named DeFi protocol detection ───────────
+      // ?? Protocol diversity + named DeFi protocol detection ???????????
       const programSet = new Set<string>();
       const protocolNamesSet = new Set<string>();
       try {
         const sampleSigs = signatures.slice(0, 50);
-        for (let i = 0; i < Math.min(20, sampleSigs.length); i++) {
+        for (let i = 0; i < Math.min(8, sampleSigs.length); i++) {
           const txResult = await serverRpc(rpcUrl, 'getTransaction', [
             sampleSigs[i].signature,
             { encoding: 'jsonParsed', maxSupportedTransactionVersion: 0, commitment: 'confirmed' },
@@ -549,27 +566,27 @@ export async function buildApp(): Promise<FastifyInstance> {
       const detectedProtocols = Array.from(protocolNamesSet);
       const meteoraDetected = detectedProtocols.includes('Meteora');
 
-      // ── .sol domain lookup + SPL token balances (parallel) ───────────
+      // ?? .sol domain lookup + SPL token balances (parallel) ???????????
       const [solDomain, tokenData] = await Promise.all([
         lookupSolDomain(wallet_address).catch(() => null),
         fetchSplTokenBalances(rpcUrl, wallet_address).catch(() => ({ usdc: 0, usdt: 0, all: {} as Record<string, number> })),
       ]);
 
-      // ── DB: repayment stats & previous scan ───────────────────────
+      // ?? DB: repayment stats & previous scan ???????????????????????
       let repStats: any = null;
       try { const rs = await sbSelect('repayment_stats', `select=*&wallet_address=eq.${wallet_address}&limit=1`); repStats = rs?.[0] || null; } catch {}
 
       let prevScan: any = null;
       try { const ps = await sbSelect('wallet_scans', `select=*&wallet_address=eq.${wallet_address}&order=created_at.desc&limit=1`); prevScan = ps?.[0] || null; } catch {}
 
-      // ── DB: X verification score ──────────────────────────────────
+      // ?? DB: X verification score ??????????????????????????????????
       let xVerificationScore = 0;
       try {
         const xr = await sbSelect('wallet_profiles', `select=x_verification_score,x_connected&wallet_address=eq.${wallet_address}&limit=1`);
         if (xr?.[0]?.x_connected) xVerificationScore = xr[0].x_verification_score || 0;
       } catch {}
 
-      // ── Score computation ─────────────────────────────────────────
+      // ?? Score computation ?????????????????????????????????????????
       const ageScore = Math.min(60, Math.floor((walletAgeDays / 365) * 60));
       const volumeScore = Math.min(60, Math.floor((txCount / 500) * 60));
       const consistencyScore = Math.min(60, Math.floor((monthlyActivity / 12) * 60));
@@ -651,7 +668,7 @@ export async function buildApp(): Promise<FastifyInstance> {
     }
   });
 
-  // ── BORROW APPLY (legacy standalone route) ───────────────────────
+  // ?? BORROW APPLY (legacy standalone route) ???????????????????????
   app.post('/api/borrow/apply', async (req, reply) => {
     const { wallet_address, amount_sol, duration_days } = req.body as any || {};
     if (!wallet_address || !amount_sol) return reply.code(400).send({ ok: false, error: 'wallet_address and amount_sol required' });
@@ -666,7 +683,7 @@ export async function buildApp(): Promise<FastifyInstance> {
     } catch (e: any) { return reply.code(500).send({ ok: false, error: e.message }); }
   });
 
-  // ── POOL STATUS & WAITLIST ───────────────────────────────────────
+  // ?? POOL STATUS & WAITLIST ???????????????????????????????????????
   app.get('/api/pool/status', async (_req, reply) => {
     try {
       const rows = await sbSelect('credit_pool_state', 'select=pool_live,pool_paused,pool_mode,available_liquidity,updated_at&limit=1');
@@ -689,7 +706,7 @@ export async function buildApp(): Promise<FastifyInstance> {
           if (p?.telegram_chat_id) {
             const msg = p.private_mode_enabled
               ? `Lendra Update\n\nYou're on the Lendra pool launch list.\n\nOpen Lendra to view details privately:\n${APP_URL}/dashboard`
-              : `Lendra Update\n\nYou're on the pool launch list for a ${b.simulated_loan_amount || '—'} ${b.borrow_asset || 'USDC'} simulation.\n\nWe'll notify you when the Lendra Credit Pool goes live.`;
+              : `Lendra Update\n\nYou're on the pool launch list for a ${b.simulated_loan_amount || '-'} ${b.borrow_asset || 'USDC'} simulation.\n\nWe'll notify you when the Lendra Credit Pool goes live.`;
             const sent = await sendTG(p.telegram_chat_id, msg);
             await sbInsert('notification_events', { wallet_address: b.wallet_address, channel: 'telegram', event_type: 'pool_waitlist_confirmation', status: sent ? 'sent' : 'failed', recipient: p.telegram_chat_id, message: msg });
           }
@@ -724,7 +741,7 @@ export async function buildApp(): Promise<FastifyInstance> {
     } catch (e: any) { return reply.code(500).send({ ok: false, error: e.message }); }
   });
 
-  // ── TELEGRAM ─────────────────────────────────────────────────────
+  // ?? TELEGRAM ?????????????????????????????????????????????????????
   app.get('/api/telegram/webhook', async () => ({
     ok: true, service: 'telegram-webhook',
     configured: !!(TELEGRAM_BOT_TOKEN && TELEGRAM_WEBHOOK_SECRET),
@@ -776,7 +793,7 @@ export async function buildApp(): Promise<FastifyInstance> {
     } catch (e: any) { return reply.code(500).send({ ok: false, error: e.message }); }
   });
 
-  // ── NOTIFICATIONS ────────────────────────────────────────────────
+  // ?? NOTIFICATIONS ????????????????????????????????????????????????
   app.get('/api/notifications/preferences', async (req, reply) => {
     const wallet = (req.query as any)?.wallet || (req.query as any)?.wallet_address;
     if (!wallet) return reply.code(400).send({ ok: false, error: 'wallet required' });
@@ -799,7 +816,7 @@ export async function buildApp(): Promise<FastifyInstance> {
     } catch (e: any) { return reply.code(500).send({ ok: false, error: e.message }); }
   });
 
-  // ── X (TWITTER) OAUTH ────────────────────────────────────────────
+  // ?? X (TWITTER) OAUTH ????????????????????????????????????????????
   app.get('/api/auth/x/start', async (req, reply) => {
     const wallet = (req.query as any)?.wallet || (req.query as any)?.wallet_address;
     if (!wallet) return reply.code(400).send({ ok: false, error: 'wallet required' });
@@ -862,7 +879,7 @@ export async function buildApp(): Promise<FastifyInstance> {
     } catch (e: any) { return reply.code(500).send({ ok: false, error: e.message }); }
   });
 
-  // ── QUICKNODE WEBHOOK ────────────────────────────────────────────
+  // ?? QUICKNODE WEBHOOK ????????????????????????????????????????????
   app.get('/api/webhooks/quicknode', async () => ({
     ok: true, service: 'quicknode-webhook',
     configured: !!QUICKNODE_WEBHOOK_SECRET,
@@ -893,7 +910,7 @@ export async function buildApp(): Promise<FastifyInstance> {
     return { ok: true };
   });
 
-  // ── SOCIAL CARD ──────────────────────────────────────────────────
+  // ?? SOCIAL CARD ??????????????????????????????????????????????????
   app.post('/api/social-card/generate', async (req, reply) => {
     const b = req.body as any;
     if (!b?.wallet_address) return reply.code(400).send({ ok: false, error: 'wallet_address required' });
@@ -923,11 +940,11 @@ export async function buildApp(): Promise<FastifyInstance> {
       const c = rows?.[0];
       if (!c) return reply.code(404).send({ ok: false, error: 'Card not found' });
       const dw = c.private_mode_confirmed ? 'Private Wallet' : c.sol_domain || `${c.wallet_address?.slice(0,6)}...${c.wallet_address?.slice(-4)}`;
-      return { ok: true, card: { wallet_display: dw, score: c.score, max_score: c.max_score, tier: c.tier, level_name: c.level_name, eligible: c.eligible, image_url: c.image_url }, og: { title: `${dw} — Lendra Credit Score: ${c.score}/1000`, description: `Tier: ${c.tier || 'Unknown'} | Level: ${c.level_name || 'Unknown'}`, image: c.image_url || `${APP_URL}/assets/lender-logo5x.png` } };
+      return { ok: true, card: { wallet_display: dw, score: c.score, max_score: c.max_score, tier: c.tier, level_name: c.level_name, eligible: c.eligible, image_url: c.image_url }, og: { title: `${dw} - Lendra Credit Score: ${c.score}/1000`, description: `Tier: ${c.tier || 'Unknown'} | Level: ${c.level_name || 'Unknown'}`, image: c.image_url || `${APP_URL}/assets/lender-logo5x.png` } };
     } catch (e: any) { return reply.code(500).send({ ok: false, error: e.message }); }
   });
 
-  // ── BORROW SIMULATION & LOAN PRICING ─────────────────────────────
+  // ?? BORROW SIMULATION & LOAN PRICING ?????????????????????????????
   app.get('/api/loan-pricing', async (_req, reply) => {
     try {
       const rows = await sbSelect('loan_pricing_rules', 'select=*&active=eq.true&order=loan_level.asc,term_days.asc');
@@ -952,7 +969,7 @@ export async function buildApp(): Promise<FastifyInstance> {
     } catch (e: any) { return reply.code(500).send({ ok: false, error: e.message }); }
   });
 
-  // ── LENDRA AI / QVAC ────────────────────────────────────────────
+  // ?? LENDRA AI / QVAC ????????????????????????????????????????????
   app.post('/api/lendra-ai/chat', async (req, reply) => {
     const b = req.body as any;
     try {
@@ -961,7 +978,7 @@ export async function buildApp(): Promise<FastifyInstance> {
     } catch (e: any) { return reply.code(500).send({ ok: false, error: e.message }); }
   });
 
-  // ── ADMIN WEBHOOKS STATUS ────────────────────────────────────────
+  // ?? ADMIN WEBHOOKS STATUS ????????????????????????????????????????
   app.get('/api/admin/webhooks/status', async (req, reply) => {
     const admin = await verifyAdmin(req, reply);
     if (!admin) return;
@@ -1022,7 +1039,7 @@ export async function buildApp(): Promise<FastifyInstance> {
     } catch (e: any) { return reply.code(500).send({ ok: false, error: e.message }); }
   });
 
-  // ── LOAN (Redis-backed) ──────────────────────────────────────────
+  // ?? LOAN (Redis-backed) ??????????????????????????????????????????
   app.get('/api/loan/:wallet', async (req, reply) => {
     const { wallet } = req.params as { wallet: string };
     const loan = await redis.get<string>(`active_loan:${wallet}`);
@@ -1071,7 +1088,7 @@ export async function buildApp(): Promise<FastifyInstance> {
     return { repaid: true, loan, isOnTime, scoreBonus, totalScoreAdjustment: ca + scoreBonus };
   });
 
-  // ── ADMIN AUTH (Supabase-backed with bootstrap) ─────────────────
+  // ?? ADMIN AUTH (Supabase-backed with bootstrap) ?????????????????
 
   async function createAdminSession(adminId: string, adminEmail: string, adminRole: string, adminDisplayName?: string) {
     const token = genSessionToken();
@@ -1142,7 +1159,7 @@ export async function buildApp(): Promise<FastifyInstance> {
     }
   });
 
-  // Legacy alias — delegates to same bootstrap + normal login logic
+  // Legacy alias - delegates to same bootstrap + normal login logic
   app.post('/api/admin/login', async (req, reply) => {
     const { email, password } = req.body as any || {};
     if (!email || !password) return reply.code(400).send({ error: 'Email and password required' });
@@ -1235,7 +1252,7 @@ export async function buildApp(): Promise<FastifyInstance> {
     return { ok: true };
   });
 
-  // ── ADMIN SECRETS ────────────────────────────────────────────────
+  // ?? ADMIN SECRETS ????????????????????????????????????????????????
   app.get('/api/admin/secrets/history', async (req, reply) => {
     const admin = await verifyAdmin(req, reply); if (!admin) return;
     const raw = await redis.get<string>('secret_audit_log');
@@ -1267,7 +1284,7 @@ export async function buildApp(): Promise<FastifyInstance> {
     return { deleted: true };
   });
 
-  // ── SCORE ADJUSTMENT & LOAN HISTORY ──────────────────────────────
+  // ?? SCORE ADJUSTMENT & LOAN HISTORY ??????????????????????????????
   app.get('/api/score-adjust/:wallet', async (req) => {
     const { wallet } = req.params as { wallet: string };
     return { wallet, adjustment: ((await redis.get<number>(`score_adjust:${wallet}`)) || 0) as number };
@@ -1279,7 +1296,7 @@ export async function buildApp(): Promise<FastifyInstance> {
     return typeof h === 'string' ? JSON.parse(h) : h;
   });
 
-  // ── ADMIN DATA ROUTES ──────────────────────────────────────────────
+  // ?? ADMIN DATA ROUTES ??????????????????????????????????????????????
 
   app.get('/api/admin/stats', async (req, reply) => {
     const admin = await verifyAdmin(req, reply); if (!admin) return;
@@ -1464,7 +1481,7 @@ export async function buildApp(): Promise<FastifyInstance> {
     } catch (e: any) { return reply.code(500).send({ error: e.message }); }
   });
 
-  // ── ADMIN TELEGRAM ────────────────────────────────────────────
+  // ?? ADMIN TELEGRAM ????????????????????????????????????????????
   app.get('/api/admin/telegram', async (req, reply) => {
     const admin = await verifyAdmin(req, reply);
     if (!admin) return;
@@ -1475,7 +1492,7 @@ export async function buildApp(): Promise<FastifyInstance> {
     } catch (e: any) { return reply.code(500).send({ error: e.message }); }
   });
 
-  // ── ADMIN POOL ──────────────────────────────────────────────
+  // ?? ADMIN POOL ??????????????????????????????????????????????
   app.get('/api/admin/pool', async (req, reply) => {
     const admin = await verifyAdmin(req, reply);
     if (!admin) return;
@@ -1499,7 +1516,7 @@ export async function buildApp(): Promise<FastifyInstance> {
     } catch (e: any) { return reply.code(500).send({ error: e.message }); }
   });
 
-  // ── ADMIN SYSTEM STATUS ─────────────────────────────────────
+  // ?? ADMIN SYSTEM STATUS ?????????????????????????????????????
   app.get('/api/admin/system', async (req, reply) => {
     const admin = await verifyAdmin(req, reply);
     if (!admin) return;
@@ -1514,7 +1531,7 @@ export async function buildApp(): Promise<FastifyInstance> {
     return { ok: true, ...status };
   });
 
-  // ── DEVNET RPC PROXY ──────────────────────────────────────────
+  // ?? DEVNET RPC PROXY ??????????????????????????????????????????
   app.post('/api/quicknode/rpc/solana-devnet', async (req, reply) => {
     const devnetUrl = process.env.QUICKNODE_DEVNET_HTTP_URL;
     if (!devnetUrl) {
@@ -1542,7 +1559,7 @@ export async function buildApp(): Promise<FastifyInstance> {
     }
   });
 
-  // ── PRIVACY / PRIVATE MODE (Encrypt) ──────────────────────────
+  // ?? PRIVACY / PRIVATE MODE (Encrypt) ??????????????????????????
   app.post('/api/privacy/private-mode', async (req, reply) => {
     const { wallet_address, enabled, tx_signature, memo } = req.body as any;
     if (!wallet_address) return reply.code(400).send({ error: 'wallet_address required' });
@@ -1560,7 +1577,7 @@ export async function buildApp(): Promise<FastifyInstance> {
     } catch (e: any) { return reply.code(500).send({ error: e.message }); }
   });
 
-  // ── CROSS-CHAIN CONNECT (Ika) ─────────────────────────────────
+  // ?? CROSS-CHAIN CONNECT (Ika) ?????????????????????????????????
   app.post('/api/cross-chain/connect', async (req, reply) => {
     const { wallet_address, chain, external_address, tx_signature, analysis } = req.body as any;
     if (!wallet_address || !chain || !external_address) {
@@ -1580,7 +1597,7 @@ export async function buildApp(): Promise<FastifyInstance> {
     } catch (e: any) { return reply.code(500).send({ error: e.message }); }
   });
 
-  // ── ADMIN INTEGRATION METRICS ─────────────────────────────────
+  // ?? ADMIN INTEGRATION METRICS ?????????????????????????????????
   app.get('/api/admin/integrations', async (req, reply) => {
     const admin = await verifyAdmin(req, reply);
     if (!admin) return;
@@ -1631,7 +1648,7 @@ export async function buildApp(): Promise<FastifyInstance> {
     } catch (e: any) { return reply.code(500).send({ error: e.message }); }
   });
 
-  // ── WALLET TRUST SIGNALS & SOL DOMAIN ───────────────────────────
+  // ?? WALLET TRUST SIGNALS & SOL DOMAIN ???????????????????????????
 
   // GET .sol domain for a wallet (lightweight, no full scan)
   app.get('/api/wallet/sol-domain', async (req, reply) => {
@@ -1654,7 +1671,7 @@ export async function buildApp(): Promise<FastifyInstance> {
     } catch (e: any) { return reply.code(500).send({ ok: false, error: e.message }); }
   });
 
-  // POST /api/wallet/trust-signals/refresh — re-check .sol, token balances, protocols
+  // POST /api/wallet/trust-signals/refresh - re-check .sol, token balances, protocols
   app.post('/api/wallet/trust-signals/refresh', async (req, reply) => {
     const { wallet_address } = req.body as any || {};
     if (!wallet_address) return reply.code(400).send({ ok: false, error: 'wallet_address required' });
@@ -1687,11 +1704,11 @@ export async function buildApp(): Promise<FastifyInstance> {
     } catch (e: any) { return reply.code(500).send({ ok: false, error: e.message }); }
   });
 
-  // ═══════════════════════════════════════════════════════════════════════
-  // ═══ BLOG CMS API + SSR ═══════════════════════════════════════════════
-  // ═══════════════════════════════════════════════════════════════════════
+  // ???????????????????????????????????????????????????????????????????????
+  // ??? BLOG CMS API + SSR ???????????????????????????????????????????????
+  // ???????????????????????????????????????????????????????????????????????
 
-  // ── Admin Blog CRUD ──────────────────────────────────────────────────
+  // ?? Admin Blog CRUD ??????????????????????????????????????????????????
 
   // List all posts (admin)
   app.get('/api/admin/blog/posts', async (req, reply) => {
@@ -1725,7 +1742,7 @@ export async function buildApp(): Promise<FastifyInstance> {
       const slug = body.slug || body.title?.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
       const wordCount = (body.content_md || body.content_markdown || '').split(/\s+/).filter(Boolean).length;
       const readTime = Math.max(1, Math.round(wordCount / 250));
-      // Author role cannot publish — force draft
+      // Author role cannot publish - force draft
       const requestedStatus = body.status || 'draft';
       const allowedStatus = (requestedStatus === 'published' && !['super_admin', 'admin'].includes(admin.role))
         ? 'draft'
@@ -1893,7 +1910,7 @@ export async function buildApp(): Promise<FastifyInstance> {
     } catch (e: any) { return reply.code(500).send({ error: e.message }); }
   });
 
-  // Media upload (base64 → Supabase Storage → media_assets record)
+  // Media upload (base64 ? Supabase Storage ? media_assets record)
   app.post('/api/admin/blog/media/upload', async (req, reply) => {
     const admin = await verifyAdmin(req, reply);
     if (!admin) return;
@@ -1978,7 +1995,7 @@ export async function buildApp(): Promise<FastifyInstance> {
     } catch (e: any) { return reply.code(500).send({ error: e.message }); }
   });
 
-  // ── Public Blog API ──────────────────────────────────────────────────
+  // ?? Public Blog API ??????????????????????????????????????????????????
 
   app.get('/api/blog/posts', async (req, reply) => {
     const qs = req.query as any;
@@ -2020,7 +2037,7 @@ export async function buildApp(): Promise<FastifyInstance> {
     catch (e: any) { return reply.code(500).send({ error: e.message }); }
   });
 
-  // ── Blog SSR (SEO-friendly server-rendered pages) ────────────────────
+  // ?? Blog SSR (SEO-friendly server-rendered pages) ????????????????????
 
   function blogHtmlShell(title: string, description: string, ogImage: string, canonicalPath: string, bodyContent: string, schemaJson?: string) {
     const fullUrl = `${APP_URL}${canonicalPath}`;
@@ -2184,7 +2201,7 @@ ${schemaJson ? `<script type="application/ld+json">${schemaJson}</script>` : ''}
       const bodyContent = `<div class="blog-list-container"><div class="blog-hero"><h1>Lendra Blog</h1><p>Protocol updates, DeFi research, and engineering deep dives from the Lendra team.</p></div><div class="posts-grid">${cardsHtml}</div></div>`;
 
       const html = blogHtmlShell(
-        'Lendra Blog — DeFi Credit Protocol Insights',
+        'Lendra Blog - DeFi Credit Protocol Insights',
         'Protocol updates, DeFi research, and engineering deep dives from the Lendra team. Your wallet is your credit score.',
         '',
         '/blog',
@@ -2196,13 +2213,13 @@ ${schemaJson ? `<script type="application/ld+json">${schemaJson}</script>` : ''}
     }
   });
 
-  // SSR: Single blog post — MUST be registered AFTER /blog/category/:c and /blog/tag/:t
+  // SSR: Single blog post - MUST be registered AFTER /blog/category/:c and /blog/tag/:t
   app.get('/blog/:slug', async (req, reply) => {
     const { slug } = req.params as { slug: string };
     try {
       const posts = await sbSelect('blog_posts', `slug=eq.${slug}&status=eq.published&select=*,blog_authors(name,slug,bio,avatar_url,x_handle),blog_categories(name,slug,color)`);
       if (!posts?.length) {
-        return reply.code(404).type('text/html').send(blogHtmlShell('Not Found — Lendra Blog', 'Article not found.', '', `/blog/${slug}`, '<div class="blog-container" style="text-align:center;padding:80px 20px"><h1 style="font-size:32px;color:#fff;margin-bottom:12px">Article not found</h1><p style="color:var(--brand-muted)">This article may have been moved or deleted.</p><p style="margin-top:20px"><a href="' + APP_URL + '/blog">Back to Blog</a></p></div>'));
+        return reply.code(404).type('text/html').send(blogHtmlShell('Not Found - Lendra Blog', 'Article not found.', '', `/blog/${slug}`, '<div class="blog-container" style="text-align:center;padding:80px 20px"><h1 style="font-size:32px;color:#fff;margin-bottom:12px">Article not found</h1><p style="color:var(--brand-muted)">This article may have been moved or deleted.</p><p style="margin-top:20px"><a href="' + APP_URL + '/blog">Back to Blog</a></p></div>'));
       }
       const post = posts[0];
       const tagRows = await sbSelect('blog_post_tags', `post_id=eq.${post.id}&select=blog_tags(name,slug)`);
@@ -2274,7 +2291,7 @@ ${schemaJson ? `<script type="application/ld+json">${schemaJson}</script>` : ''}
       const schemaJsonStr = JSON.stringify(schema) + (faqSchema ? `</script><script type="application/ld+json">${JSON.stringify(faqSchema)}` : '');
 
       const html = blogHtmlShell(
-        (post.meta_title || post.title) + ' — Lendra Blog',
+        (post.meta_title || post.title) + ' - Lendra Blog',
         post.meta_description || post.excerpt || '',
         post.og_image_url || post.cover_image_url || '',
         `/blog/${post.slug}`,
@@ -2294,7 +2311,7 @@ ${schemaJson ? `<script type="application/ld+json">${schemaJson}</script>` : ''}
       const categories = await sbSelect('blog_categories', 'order=sort_order.asc');
       const cat = (categories || []).find((c: any) => c.slug === category);
       if (!cat) {
-        return reply.code(404).type('text/html').send(blogHtmlShell('Not Found — Lendra Blog', 'Category not found.', '', `/blog/category/${category}`, '<div class="blog-container" style="text-align:center;padding:80px 20px"><h1 style="font-size:32px;color:#fff;margin-bottom:12px">Category not found</h1><p style="color:var(--brand-muted)">This category does not exist.</p><p style="margin-top:20px"><a href="' + APP_URL + '/blog">Back to Blog</a></p></div>'));
+        return reply.code(404).type('text/html').send(blogHtmlShell('Not Found - Lendra Blog', 'Category not found.', '', `/blog/category/${category}`, '<div class="blog-container" style="text-align:center;padding:80px 20px"><h1 style="font-size:32px;color:#fff;margin-bottom:12px">Category not found</h1><p style="color:var(--brand-muted)">This category does not exist.</p><p style="margin-top:20px"><a href="' + APP_URL + '/blog">Back to Blog</a></p></div>'));
       }
 
       const posts = await sbSelect('blog_posts', `status=eq.published&category_id=eq.${cat.id}&order=published_at.desc&limit=50&select=id,title,slug,excerpt,cover_image_url,cover_image_alt,published_at,read_time_minutes,is_featured,blog_authors(name),blog_categories(name,slug,color)`);
@@ -2310,7 +2327,7 @@ ${schemaJson ? `<script type="application/ld+json">${schemaJson}</script>` : ''}
         cardsHtml = '<div style="text-align:center;padding:60px 20px;color:var(--brand-muted)"><p style="font-size:18px;margin-bottom:8px">No articles in this category yet</p><p>Check back soon.</p></div>';
       }
       const bodyContent = `<div class="blog-list-container"><div class="blog-hero"><h1>${escHtml(cat.name)}</h1><p>${escHtml(cat.description || `Articles about ${cat.name} from the Lendra team.`)}</p></div><div class="posts-grid">${cardsHtml}</div></div>`;
-      const html = blogHtmlShell(`${cat.name} — Lendra Blog`, cat.description || `${cat.name} articles from Lendra.`, '', `/blog/category/${category}`, bodyContent);
+      const html = blogHtmlShell(`${cat.name} - Lendra Blog`, cat.description || `${cat.name} articles from Lendra.`, '', `/blog/category/${category}`, bodyContent);
       reply.type('text/html').send(html);
     } catch (e: any) {
       reply.code(500).type('text/html').send(`<h1>Error</h1><p>${escHtml(e.message)}</p>`);
@@ -2324,7 +2341,7 @@ ${schemaJson ? `<script type="application/ld+json">${schemaJson}</script>` : ''}
       const tagRows = await sbSelect('blog_tags', `slug=eq.${tag}&select=id,name,slug&limit=1`);
       const tagObj = tagRows?.[0];
       if (!tagObj) {
-        return reply.code(404).type('text/html').send(blogHtmlShell('Not Found — Lendra Blog', 'Tag not found.', '', `/blog/tag/${tag}`, '<div class="blog-container" style="text-align:center;padding:80px 20px"><h1 style="font-size:32px;color:#fff;margin-bottom:12px">Tag not found</h1><p style="color:var(--brand-muted)">This tag does not exist.</p><p style="margin-top:20px"><a href="' + APP_URL + '/blog">Back to Blog</a></p></div>'));
+        return reply.code(404).type('text/html').send(blogHtmlShell('Not Found - Lendra Blog', 'Tag not found.', '', `/blog/tag/${tag}`, '<div class="blog-container" style="text-align:center;padding:80px 20px"><h1 style="font-size:32px;color:#fff;margin-bottom:12px">Tag not found</h1><p style="color:var(--brand-muted)">This tag does not exist.</p><p style="margin-top:20px"><a href="' + APP_URL + '/blog">Back to Blog</a></p></div>'));
       }
 
       const postTags = await sbSelect('blog_post_tags', `tag_id=eq.${tagObj.id}&select=post_id`);
@@ -2346,7 +2363,7 @@ ${schemaJson ? `<script type="application/ld+json">${schemaJson}</script>` : ''}
         cardsHtml = '<div style="text-align:center;padding:60px 20px;color:var(--brand-muted)"><p style="font-size:18px;margin-bottom:8px">No articles with this tag yet</p><p>Check back soon.</p></div>';
       }
       const bodyContent = `<div class="blog-list-container"><div class="blog-hero"><h1>#${escHtml(tagObj.name)}</h1><p>Articles tagged with "${escHtml(tagObj.name)}" from the Lendra team.</p></div><div class="posts-grid">${cardsHtml}</div></div>`;
-      const html = blogHtmlShell(`#${tagObj.name} — Lendra Blog`, `Articles tagged "${tagObj.name}" from Lendra.`, '', `/blog/tag/${tag}`, bodyContent);
+      const html = blogHtmlShell(`#${tagObj.name} - Lendra Blog`, `Articles tagged "${tagObj.name}" from Lendra.`, '', `/blog/tag/${tag}`, bodyContent);
       reply.type('text/html').send(html);
     } catch (e: any) {
       reply.code(500).type('text/html').send(`<h1>Error</h1><p>${escHtml(e.message)}</p>`);

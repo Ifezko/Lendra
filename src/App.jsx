@@ -159,15 +159,16 @@ function AppContent() {
   const [aiDrawerOpen, setAiDrawerOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
+  const walletKey = connected && publicKey ? publicKey.toBase58() : null;
   useEffect(() => {
-    if (connected && publicKey) {
-      const wallet = publicKey.toBase58();
-      computeScore(wallet);
-      loan.fetchActiveLoan(wallet);
-      loan.fetchHistory(wallet);
-      loan.fetchScoreAdjustment(wallet).then((adj) => setScoreAdjustment(adj));
+    if (walletKey) {
+      computeScore(walletKey);
+      loan.fetchActiveLoan(walletKey);
+      loan.fetchHistory(walletKey);
+      loan.fetchScoreAdjustment(walletKey).then((adj) => setScoreAdjustment(adj));
     }
-  }, [connected, publicKey, computeScore]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [walletKey]);
 
   const crossChainBoost = ika.totalCrossChainBoost || 0;
   const adjustedScoreData = scoreData
@@ -275,7 +276,7 @@ function AppContent() {
             onClick={() => setAiDrawerOpen(true)}
             className="fixed bottom-6 right-6 w-14 h-14 rounded-2xl text-white flex items-center justify-center shadow-lg hover:scale-105 transition-all z-40"
             style={{ background: '#14ADAD', boxShadow: '0 10px 15px -3px rgba(20,173,173,0.25)' }}
-            title="Lendra AI — Explain your score"
+            title="Lendra AI - Explain your score"
           >
             <svg className="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M12 2a4 4 0 0 1 4 4v1a3 3 0 0 1 3 3v1a2 2 0 0 1-2 2h-1l-2 5H10l-2-5H7a2 2 0 0 1-2-2v-1a3 3 0 0 1 3-3V6a4 4 0 0 1 4-4z" />

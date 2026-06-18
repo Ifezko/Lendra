@@ -1,7 +1,7 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import { API_BASE_URL } from '../config';
 
-// ─── Score allocation (base 100, max 1000) ───────────────────────
+// ??? Score allocation (base 100, max 1000) ???????????????????????
 export const BASE_SCORE = 100;
 export const MAX_SCORE = 1000;
 
@@ -109,14 +109,19 @@ export function useCreditScore() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [scoreData, setScoreData] = useState(null);
+  const inFlightRef = useRef(null);
 
   const computeScore = useCallback(async (publicKeyStr) => {
+    if (!publicKeyStr) return;
+    // Collapse duplicate/concurrent scans for the same wallet (avoids RPC 429s).
+    if (inFlightRef.current === publicKeyStr) return;
+    inFlightRef.current = publicKeyStr;
     setLoading(true);
     setError(null);
     setScoreData(null);
 
     try {
-      // Call the server-side scan endpoint — handles RPC, scoring, and DB persistence
+      // Call the server-side scan endpoint - handles RPC, scoring, and DB persistence
       const scanUrl = API_BASE_URL
         ? `${API_BASE_URL}/api/score/scan`
         : '/api/score/scan';
@@ -143,6 +148,7 @@ export function useCreditScore() {
       setError(err.message || 'Failed to compute credit score');
     } finally {
       setLoading(false);
+      inFlightRef.current = null;
     }
   }, []);
 
