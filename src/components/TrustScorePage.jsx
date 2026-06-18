@@ -74,6 +74,13 @@ const TABS = [
   { id: 'trust', label: 'Trust Signals' },
 ];
 
+// Wallets whose trust signals have already been auto-fetched, tracked at module
+// scope so the guard survives remounts. This component unmounts/remounts every
+// time a score scan toggles the app-level loading state; a per-instance ref
+// would reset on each remount and re-trigger the auto-fetch -> reloadScore ->
+// scan cycle endlessly. A module-level Set runs the auto-fetch once per wallet.
+const autoFetchedWallets = new Set();
+
 export default function TrustScorePage({ scoreData, reloadScore }) {
   const ctx = useAppContext();
   const ika = ctx?.ika;
@@ -122,8 +129,8 @@ export default function TrustScorePage({ scoreData, reloadScore }) {
   useEffect(() => {
     if (!connected || !publicKey) return;
     const wallet = publicKey.toBase58();
-    if (autoFetchedRef.current === wallet) return;
-    autoFetchedRef.current = wallet;
+    if (autoFetchedWallets.has(wallet)) return;
+    autoFetchedWallets.add(wallet);
     refreshTrustSignals({ silent: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [connected, publicKey]);
@@ -211,7 +218,7 @@ export default function TrustScorePage({ scoreData, reloadScore }) {
           >
             {xToast.type === 'success' ? <CheckCircle className="w-4 h-4" /> : <XCircle className="w-4 h-4" />}
             {xToast.message}
-            <button onClick={() => setXToast(null)} className="ml-2 opacity-60 hover:opacity-100">✕</button>
+            <button onClick={() => setXToast(null)} className="ml-2 opacity-60 hover:opacity-100">?</button>
           </motion.div>
         )}
       </AnimatePresence>
@@ -278,7 +285,7 @@ export default function TrustScorePage({ scoreData, reloadScore }) {
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
               {[
                 { label: 'Credit Tier', value: tier.label, color: tier.color },
-                { label: 'Loan Level', value: loanLevel.level > 0 ? `${loanLevel.level} — ${loanLevel.label}` : 'Not eligible', color: '#EC81FF' },
+                { label: 'Loan Level', value: loanLevel.level > 0 ? `${loanLevel.level} - ${loanLevel.label}` : 'Not eligible', color: '#EC81FF' },
                 { label: 'Earned Trust', value: `+${totalTrustPts}/${maxTrustPts}`, color: '#EC81FF' },
                 { label: 'Can Borrow', value: canBorrow ? `$${loanLevel.amount} USDC` : 'Locked', color: canBorrow ? '#34D399' : '#EF4444' },
               ].map((stat, i) => (
