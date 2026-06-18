@@ -124,12 +124,8 @@ function HeroScoreCard() {
         </div>
 
         <div className="mt-4 pt-3 border-t border-brand-border flex items-center justify-center gap-3">
-          <span className="text-[9px] text-brand-muted">Powered by</span>
-          <span className="text-[9px] font-medium text-brand-muted/80">QuickNode</span>
-          <span className="text-[9px] text-brand-muted/40">|</span>
-          <span className="text-[9px] font-medium text-brand-muted/80">Ika</span>
-          <span className="text-[9px] text-brand-muted/40">|</span>
-          <span className="text-[9px] font-medium text-brand-muted/80">Lendra AI</span>
+          <span className="text-[9px] text-brand-muted">Your wallet is your credit score</span>
+
         </div>
       </div>
       <div className="absolute -inset-4 bg-gradient-to-br from-brand-accent/10 via-transparent to-brand-accentDark/10 rounded-3xl blur-3xl -z-10" />
@@ -190,7 +186,7 @@ function Footer() {
     ],
     Resources: [
       { label: 'Docs', href: '#' }, { label: 'GitHub', href: '#' },
-      { label: 'Blog', href: '#' }, { label: 'FAQ', href: '#faq' },
+      { label: 'Blog', href: 'blog' }, { label: 'FAQ', href: '#faq' },
     ],
     Company: [
       { label: 'About', href: '#' }, { label: 'Contact', href: '#' },

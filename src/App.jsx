@@ -1,5 +1,5 @@
 import React, { useMemo, useEffect, createContext, useContext, useState } from 'react';
-import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { ConnectionProvider, WalletProvider } from '@solana/wallet-adapter-react';
 import { WalletModalProvider } from '@solana/wallet-adapter-react-ui';
 import { useWallet } from '@solana/wallet-adapter-react';
@@ -251,7 +251,7 @@ function AppContent() {
               <Routes>
                 <Route path="/" element={<Navigate to="/dashboard" replace />} />
                 <Route path="/dashboard" element={<DashboardPage scoreData={adjustedScoreData} />} />
-                <Route path="/trust-score" element={<TrustScorePage scoreData={adjustedScoreData} />} />
+                <Route path="/trust-score" element={<TrustScorePage scoreData={adjustedScoreData} reloadScore={ctxValue.refreshScore} />} />
                 <Route path="/trust-score/cross-chain" element={<CrossChainPage />} />
                 <Route path="/borrow" element={<BorrowPage />} />
                 <Route path="/repay" element={<RepayPage />} />
@@ -338,7 +338,9 @@ function AppRouter() {
 export default function App() {
   return (
     <WalletContextProvider>
-      <AppRouter />
+      <BrowserRouter basename={import.meta.env.BASE_URL}>
+        <AppRouter />
+      </BrowserRouter>
     </WalletContextProvider>
   );
 }

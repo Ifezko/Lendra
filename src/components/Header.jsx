@@ -1,13 +1,14 @@
 import React from 'react';
 import { WalletMultiButton } from '@solana/wallet-adapter-react-ui';
 import { useWallet } from '@solana/wallet-adapter-react';
-import { Menu, Lock, Loader2 } from 'lucide-react';
+import { Menu, Lock, Loader2, Hash } from 'lucide-react';
 import { useAppContext } from '../App';
 
 export default function Header({ onMenuToggle, showMenu }) {
   const { connected } = useWallet();
   const ctx = useAppContext();
   const privateMode = ctx?.privateMode;
+  const solDomain = ctx?.scoreData?.solDomain;
 
   return (
     <header className="sticky top-0 z-30 backdrop-blur-xl bg-brand-bg/80 border-b border-brand-border">
@@ -40,6 +41,15 @@ export default function Header({ onMenuToggle, showMenu }) {
         </div>
 
         <div className="flex items-center gap-2">
+          {connected && solDomain && (
+            <div
+              className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-brand-accent/10 text-brand-accent border border-brand-accent/20"
+              title={`Your verified .sol identity: ${solDomain}`}
+            >
+              <Hash className="w-3 h-3" />
+              <span>{solDomain}</span>
+            </div>
+          )}
           {connected && privateMode && (
             <button
               onClick={() => privateMode.togglePrivateMode()}

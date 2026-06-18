@@ -69,6 +69,77 @@ const sbSelect = (table: string, qs = '') => sbFetch(`${table}${qs ? '?' + qs : 
 const sbUpsert = (table: string, data: any) =>
   sbFetch(table, { method: 'POST', headers: { 'Prefer': 'return=representation,resolution=merge-duplicates' } as any, body: JSON.stringify(data) });
 
+// ── Known DeFi Protocol Program IDs (Solana) ─────────────────────────
+const KNOWN_PROTOCOLS: Record<string, string> = {
+  'LBUZKhRxPF3XUpBCjp4YzTKgLLjeyNZ2FLJhpBYQ2Hh': 'Meteora',
+  'Eo7WjKq67rjJQSZxS6z3YkapzY3eMj6Xy8X5EkAW7vAR': 'Meteora',
+  '24Uqj9JCLxUeoC3hGfh5W3s9FM9uCHDS2SG3LYwBpyTi': 'Meteora',
+  'M2mx93ekt1fmXSVkTrUL9xVFHkmME8HTUi5Cyc5aF7K': 'Meteora',
+  'JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4': 'Jupiter',
+  'JUP4Fb2cqiRUcaTHdrPC8h2gNsA2ETXiPDD33WcGuJB': 'Jupiter',
+  'KLend2g3cP87fffoy8q1mQqGKjrL1AyT5Ljm4mwFDvS': 'Kamino',
+  'whirLbMiicVdio4qvUfM5KAg6Ct8VwpYzGff3uctyCc': 'Orca',
+  '675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8': 'Raydium',
+  'CAMMCzo5YL8w4VFF8KVHrK22GGUsp5VTaW7grrKgrWqK': 'Raydium',
+  'MFv2hWf31Z9kbCa1snEPdcgp4HVF7cBMuFLEBmBYehq': 'MarginFi',
+  'So1endDq2YkqhipRh3WViPa8hdiSpxWy6z3Z6tMCpAo': 'Solend',
+  'Port7uDYB3wkMGkPyNAArpa78X7xqLT2W8p6emzmAz2r': 'Port',
+  'DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263': 'Bonk',
+  'TSWAPaqyCSx2KABk68Shruf4rp7CxcAi9oMkCPFnEEa': 'Tensor',
+  'hadeK9DLv9eA7ya5KCTqSvSvRZeJC3JgD5a9Y3CNbvu': 'Hadeswap',
+};
+
+const USDC_MINT = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
+const USDT_MINT = 'Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB';
+const WSOL_MINT = 'So11111111111111111111111111111111111111112';
+
+// ── .sol / SNS Reverse Lookup ─────────────────────────────────────────
+async function lookupSolDomain(wallet: string): Promise<string | null> {
+  try {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 5000);
+    const res = await fetch(`https://sns-sdk-proxy.bonfida.workers.dev/reverse-lookup/${wallet}`, {
+      headers: { 'Accept': 'application/json' },
+      signal: ctrl.signal,
+    });
+    clearTimeout(timer);
+    if (!res.ok) return null;
+    const data = await res.json();
+    if (data?.s === 'ok' && data?.result) {
+      const domain = String(data.result);
+      return domain.endsWith('.sol') ? domain : `${domain}.sol`;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+// ── SPL Token Balance Fetcher ─────────────────────────────────────────
+async function fetchSplTokenBalances(rpcUrl: string, wallet: string): Promise<{
+  usdc: number; usdt: number; all: Record<string, number>;
+}> {
+  try {
+    const TOKEN_PROGRAM_ID = 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA';
+    const result = await serverRpc(rpcUrl, 'getTokenAccountsByOwner', [
+      wallet,
+      { programId: TOKEN_PROGRAM_ID },
+      { encoding: 'jsonParsed', commitment: 'confirmed' },
+    ]);
+    const balances: Record<string, number> = {};
+    for (const { account } of (result?.value || [])) {
+      const info = account?.data?.parsed?.info;
+      if (!info) continue;
+      const mint: string = info.mint;
+      const amount = parseFloat(info.tokenAmount?.uiAmount ?? 0);
+      if (amount > 0) balances[mint] = (balances[mint] || 0) + amount;
+    }
+    return { usdc: balances[USDC_MINT] || 0, usdt: balances[USDT_MINT] || 0, all: balances };
+  } catch {
+    return { usdc: 0, usdt: 0, all: {} };
+  }
+}
+
 // ── Telegram helper ──────────────────────────────────────────────────
 
 async function sendTG(chatId: string, text: string): Promise<boolean> {
@@ -241,7 +312,8 @@ async function serverRpc(rpcUrl: string, method: string, params: any[] = []) {
 
 async function persistScanServer(wallet: string, result: any, repStats: any, prevScan: any) {
   const { score, tier, loanLevel, walletAgeDays, txCount, monthlyActivity,
-    protocolCount, balanceUsd, spend90d, canBorrow, breakdown } = result;
+    protocolCount, balanceUsd, spend90d, canBorrow, breakdown,
+    solDomain, detectedProtocols, meteoraDetected, tokenBalances } = result;
 
   const scanRow: any = {
     wallet_address: wallet, score, max_score: MAX_SCORE_LIMIT,
@@ -259,6 +331,17 @@ async function persistScanServer(wallet: string, result: any, repStats: any, pre
     unique_protocols: protocolCount,
     recent_spend_90d: Math.round(spend90d * 100) / 100,
     portfolio_value_usd: Math.round(balanceUsd * 100) / 100,
+    // New: .sol domain + protocols + tokens
+    sol_domain: solDomain || null,
+    has_sol_domain: !!solDomain,
+    detected_protocols: detectedProtocols || [],
+    token_balances: tokenBalances || null,
+    stablecoin_balances: tokenBalances ? { usdc: tokenBalances.usdc || 0, usdt: tokenBalances.usdt || 0 } : null,
+    trust_signals: {
+      sol_identity: !!solDomain,
+      meteora_detected: !!meteoraDetected,
+      defi_protocols: detectedProtocols || [],
+    },
   };
 
   const scanResult = await sbInsert('wallet_scans', scanRow);
@@ -279,7 +362,26 @@ async function persistScanServer(wallet: string, result: any, repStats: any, pre
     } catch {}
   }
 
-  try { await sbUpsert('wallet_profiles', { wallet_address: wallet, updated_at: new Date().toISOString() }); } catch {}
+  // Update wallet_profiles with sol domain, protocol data, and token balances
+  try {
+    await sbUpsert('wallet_profiles', {
+      wallet_address: wallet,
+      updated_at: new Date().toISOString(),
+      last_protocol_scan_at: new Date().toISOString(),
+      last_trust_signal_refresh_at: new Date().toISOString(),
+      ...(solDomain ? { sol_domain: solDomain, has_sol_domain: true, sol_identity_linked: true } : {}),
+      ...(detectedProtocols?.length ? {
+        detected_protocols: detectedProtocols,
+        defi_protocol_count: detectedProtocols.length,
+        meteora_detected: !!meteoraDetected,
+      } : {}),
+      ...(tokenBalances ? {
+        stablecoin_balance_usdc: tokenBalances.usdc || 0,
+        stablecoin_balance_usdt: tokenBalances.usdt || 0,
+        portfolio_value_usd: balanceUsd,
+      } : {}),
+    });
+  } catch {}
 
   if (prevScan && prevScan.score !== score) {
     try {
@@ -421,8 +523,9 @@ export async function buildApp(): Promise<FastifyInstance> {
       const monthlyActivity = monthSet.size;
       const spend90d = recentTxCount * 0.015 * solPrice;
 
-      // ── Protocol diversity (sample first 20 txns) ─────────────────
+      // ── Protocol diversity + named DeFi protocol detection ───────────
       const programSet = new Set<string>();
+      const protocolNamesSet = new Set<string>();
       try {
         const sampleSigs = signatures.slice(0, 50);
         for (let i = 0; i < Math.min(20, sampleSigs.length); i++) {
@@ -435,12 +538,22 @@ export async function buildApp(): Promise<FastifyInstance> {
               const addr = typeof key === 'string' ? key : key?.pubkey;
               if (addr && addr !== wallet_address && addr !== '11111111111111111111111111111111') {
                 programSet.add(addr);
+                const knownProto = KNOWN_PROTOCOLS[addr];
+                if (knownProto) protocolNamesSet.add(knownProto);
               }
             }
           }
         }
       } catch { /* fallback */ }
       const protocolCount = Math.min(programSet.size, 50);
+      const detectedProtocols = Array.from(protocolNamesSet);
+      const meteoraDetected = detectedProtocols.includes('Meteora');
+
+      // ── .sol domain lookup + SPL token balances (parallel) ───────────
+      const [solDomain, tokenData] = await Promise.all([
+        lookupSolDomain(wallet_address).catch(() => null),
+        fetchSplTokenBalances(rpcUrl, wallet_address).catch(() => ({ usdc: 0, usdt: 0, all: {} as Record<string, number> })),
+      ]);
 
       // ── DB: repayment stats & previous scan ───────────────────────
       let repStats: any = null;
@@ -461,7 +574,9 @@ export async function buildApp(): Promise<FastifyInstance> {
       const volumeScore = Math.min(60, Math.floor((txCount / 500) * 60));
       const consistencyScore = Math.min(60, Math.floor((monthlyActivity / 12) * 60));
       const diversityScore = Math.min(70, Math.floor((protocolCount / 15) * 70));
-      const portfolioScore = Math.min(40, Math.floor((balanceUsd / 5000) * 40));
+      // Include stablecoin balances in portfolio (USDC = $1, USDT = $1)
+      const totalPortfolioUsd = balanceUsd + (tokenData.usdc || 0) + (tokenData.usdt || 0);
+      const portfolioScore = Math.min(40, Math.floor((totalPortfolioUsd / 5000) * 40));
 
       const cleanRepayments = repStats?.clean_repayments || 0;
       const earlyRepayments = repStats?.early_repayments || 0;
@@ -487,7 +602,8 @@ export async function buildApp(): Promise<FastifyInstance> {
 
       const borrowGrowthScore = Math.min(100, qualifyingReps * 5);
       const crossChainScore = 0;
-      const solIdentityScore = 0;
+      // .sol identity: 40 pts if domain found via SNS reverse lookup
+      const solIdentityScore = solDomain ? 40 : 0;
       const superteamScore = 0;
 
       const totalScore = Math.min(MAX_SCORE_LIMIT, BASE_SCORE +
@@ -504,7 +620,18 @@ export async function buildApp(): Promise<FastifyInstance> {
       const result = {
         score: totalScore, tier, loanLevel,
         walletAgeDays, txCount, monthlyActivity, protocolCount,
-        balanceUsd, spend90d: Math.round(spend90d * 100) / 100, canBorrow, cleanRepayments,
+        balanceUsd: Math.round(totalPortfolioUsd * 100) / 100,
+        balanceSolOnly: Math.round(balanceUsd * 100) / 100,
+        spend90d: Math.round(spend90d * 100) / 100,
+        canBorrow, cleanRepayments,
+        solDomain,
+        detectedProtocols,
+        meteoraDetected,
+        tokenBalances: {
+          sol: Math.round(balanceSol * 1000) / 1000,
+          usdc: Math.round((tokenData.usdc || 0) * 100) / 100,
+          usdt: Math.round((tokenData.usdt || 0) * 100) / 100,
+        },
         breakdown: {
           age: ageScore, volume: volumeScore, consistency: consistencyScore,
           diversity: diversityScore, portfolio: portfolioScore,
@@ -626,7 +753,7 @@ export async function buildApp(): Promise<FastifyInstance> {
       const code = text.split(' ')[1];
       const wa = await redis.get<string>(`telegram_link:${code}`);
       if (!wa) { await sendTG(chatId, 'This Lendra link has expired. Please return to Lendra and try again.'); return { ok: true }; }
-      try { await sbUpdate('wallet_profiles', { telegram_chat_id: chatId, telegram_username: username, telegram_connected: true, telegram_connected_at: new Date().toISOString(), telegram_alerts_enabled: true, updated_at: new Date().toISOString() }, `wallet_address=eq.${wa}`); } catch {}
+      try { await sbUpsert('wallet_profiles', { wallet_address: wa, telegram_chat_id: chatId, telegram_username: username, telegram_connected: true, telegram_connected_at: new Date().toISOString(), telegram_alerts_enabled: true, updated_at: new Date().toISOString() }); } catch {}
       await redis.del(`telegram_link:${code}`);
       try { await sbInsert('notification_events', { wallet_address: wa, channel: 'telegram', event_type: 'telegram_connected', status: 'sent', recipient: chatId, message: 'Lendra alerts are now enabled for this wallet.' }); } catch {}
       await sendTG(chatId, 'Lendra alerts are now enabled for this wallet.');
@@ -708,7 +835,7 @@ export async function buildApp(): Promise<FastifyInstance> {
       const u = (await userRes.json()).data;
       const ageDays = Math.floor((Date.now() - new Date(u.created_at).getTime()) / 86400000);
       let xScore = 15 + (u.id ? 15 : 0) + (ageDays > 730 ? 35 : 0) + ((u.public_metrics?.tweet_count || 0) >= 100 ? 35 : 0);
-      try { await sbUpdate('wallet_profiles', { x_user_id: u.id, x_username: u.username, x_display_name: u.name, x_profile_image: u.profile_image_url, x_account_created_at: u.created_at, x_account_age_days: ageDays, x_posts_count: u.public_metrics?.tweet_count || 0, x_followers_count: u.public_metrics?.followers_count || 0, x_following_count: u.public_metrics?.following_count || 0, x_connected: true, x_connected_at: new Date().toISOString(), x_verification_score: xScore, updated_at: new Date().toISOString() }, `wallet_address=eq.${wa}`); } catch {}
+      try { await sbUpsert('wallet_profiles', { wallet_address: wa, x_user_id: u.id, x_username: u.username, x_display_name: u.name, x_profile_image: u.profile_image_url, x_account_created_at: u.created_at, x_account_age_days: ageDays, x_posts_count: u.public_metrics?.tweet_count || 0, x_followers_count: u.public_metrics?.followers_count || 0, x_following_count: u.public_metrics?.following_count || 0, x_connected: true, x_connected_at: new Date().toISOString(), x_verification_score: xScore, updated_at: new Date().toISOString() }); } catch {}
       try { await sbInsert('x_verification_events', { wallet_address: wa, x_user_id: u.id, event_type: 'x_connected', status: 'success', points_awarded: xScore, metadata: { x_username: u.username, x_account_age_days: ageDays, x_posts_count: u.public_metrics?.tweet_count || 0, x_followers_count: u.public_metrics?.followers_count || 0 } }); } catch {}
       try { await sbInsert('partner_events', { partner: 'x', event_type: 'x_connected', wallet_address: wa, metadata: { x_user_id: u.id, x_username: u.username, x_verification_score: xScore } }); } catch {}
       await redis.del(`x_oauth:${state}`);
@@ -1502,6 +1629,62 @@ export async function buildApp(): Promise<FastifyInstance> {
         })),
       };
     } catch (e: any) { return reply.code(500).send({ error: e.message }); }
+  });
+
+  // ── WALLET TRUST SIGNALS & SOL DOMAIN ───────────────────────────
+
+  // GET .sol domain for a wallet (lightweight, no full scan)
+  app.get('/api/wallet/sol-domain', async (req, reply) => {
+    const wallet = (req.query as any)?.wallet_address || (req.query as any)?.wallet;
+    if (!wallet) return reply.code(400).send({ ok: false, error: 'wallet_address required' });
+    try {
+      // Check DB cache first (avoid hitting SNS every time)
+      const rows = await sbSelect('wallet_profiles', `select=sol_domain,has_sol_domain,last_trust_signal_refresh_at&wallet_address=eq.${wallet}&limit=1`);
+      const profile = rows?.[0];
+      if (profile?.has_sol_domain && profile.sol_domain) {
+        return { ok: true, sol_domain: profile.sol_domain, cached: true };
+      }
+      // Fresh SNS lookup
+      const domain = await lookupSolDomain(wallet);
+      if (domain) {
+        // Save to profile (non-blocking)
+        sbUpsert('wallet_profiles', { wallet_address: wallet, sol_domain: domain, has_sol_domain: true, sol_identity_linked: true, last_trust_signal_refresh_at: new Date().toISOString() }).then(null, () => {});
+      }
+      return { ok: true, sol_domain: domain, cached: false };
+    } catch (e: any) { return reply.code(500).send({ ok: false, error: e.message }); }
+  });
+
+  // POST /api/wallet/trust-signals/refresh — re-check .sol, token balances, protocols
+  app.post('/api/wallet/trust-signals/refresh', async (req, reply) => {
+    const { wallet_address } = req.body as any || {};
+    if (!wallet_address) return reply.code(400).send({ ok: false, error: 'wallet_address required' });
+    const rpcUrl = getQuicknodeHttpUrl();
+    if (!rpcUrl) return reply.code(500).send({ ok: false, error: 'RPC not configured' });
+    try {
+      const [solDomain, tokenData] = await Promise.all([
+        lookupSolDomain(wallet_address).catch(() => null),
+        fetchSplTokenBalances(rpcUrl, wallet_address).catch(() => ({ usdc: 0, usdt: 0, all: {} })),
+      ]);
+      const profileUpdate: any = {
+        wallet_address,
+        updated_at: new Date().toISOString(),
+        last_trust_signal_refresh_at: new Date().toISOString(),
+        stablecoin_balance_usdc: tokenData.usdc || 0,
+        stablecoin_balance_usdt: tokenData.usdt || 0,
+      };
+      if (solDomain) {
+        profileUpdate.sol_domain = solDomain;
+        profileUpdate.has_sol_domain = true;
+        profileUpdate.sol_identity_linked = true;
+      }
+      try { await sbUpsert('wallet_profiles', profileUpdate); } catch {}
+      return {
+        ok: true,
+        sol_domain: solDomain,
+        token_balances: { usdc: tokenData.usdc || 0, usdt: tokenData.usdt || 0 },
+        refreshed_at: new Date().toISOString(),
+      };
+    } catch (e: any) { return reply.code(500).send({ ok: false, error: e.message }); }
   });
 
   // ═══════════════════════════════════════════════════════════════════════

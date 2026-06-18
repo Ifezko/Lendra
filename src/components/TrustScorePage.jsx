@@ -1,10 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useWallet } from '@solana/wallet-adapter-react';
 import { Link, useSearchParams } from 'react-router-dom';
 import {
   ShieldCheck, Globe, CheckCircle, Zap, Hash, Award, RefreshCw,
-  Lock, ArrowUpRight, ExternalLink, ChevronRight, BarChart3, Brain, Loader2, XCircle, Unlink,
+  Lock, ArrowUpRight, ExternalLink, ChevronRight, BarChart3, Brain, Loader2, XCircle, Unlink, Layers,
 } from 'lucide-react';
 import ScoreRing from './ScoreRing';
 import ScoreBreakdown from './ScoreBreakdown';
@@ -15,6 +15,7 @@ import BoostCard from './BoostCard';
 import { useAppContext } from '../App';
 import { SCORE_FACTORS, BASE_SCORE } from '../hooks/useCreditScore';
 import { useXAccount } from '../hooks/useXAccount';
+import { API_BASE_URL } from '../config';
 
 function XIcon({ className }) {
   return (
@@ -73,7 +74,7 @@ const TABS = [
   { id: 'trust', label: 'Trust Signals' },
 ];
 
-export default function TrustScorePage({ scoreData }) {
+export default function TrustScorePage({ scoreData, reloadScore }) {
   const ctx = useAppContext();
   const ika = ctx?.ika;
   const privateMode = ctx?.privateMode;
@@ -81,7 +82,51 @@ export default function TrustScorePage({ scoreData }) {
   const [activeTab, setActiveTab] = useState('overview');
   const [searchParams, setSearchParams] = useSearchParams();
   const [xToast, setXToast] = useState(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const [refreshResult, setRefreshResult] = useState(null);
   const xAccount = useXAccount();
+  const autoFetchedRef = useRef(null);
+
+  const refreshTrustSignals = useCallback(async ({ silent = false } = {}) => {
+    if (!publicKey || refreshing) return;
+    setRefreshing(true);
+    if (!silent) setRefreshResult(null);
+    try {
+      const url = API_BASE_URL ? `${API_BASE_URL}/api/wallet/trust-signals/refresh` : 'api/wallet/trust-signals/refresh';
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ wallet_address: publicKey.toBase58() }),
+      });
+      const json = await res.json();
+      if (json.ok) {
+        // Only surface a toast/banner when a .sol domain was newly found, or on manual refresh
+        if (!silent || json.sol_domain) {
+          setRefreshResult({ success: true, solDomain: json.sol_domain, tokenBalances: json.token_balances });
+        }
+        // Trigger a full score re-scan to pick up updated signals
+        if (typeof reloadScore === 'function') reloadScore();
+      } else if (!silent) {
+        setRefreshResult({ success: false, error: json.error || 'Refresh failed' });
+      }
+    } catch (e) {
+      if (!silent) setRefreshResult({ success: false, error: e.message });
+    } finally {
+      setRefreshing(false);
+      if (!silent) setTimeout(() => setRefreshResult(null), 5000);
+    }
+  }, [publicKey, refreshing, reloadScore]);
+
+  // Auto-fetch trust signals (.sol identity, token balances) once per connected wallet.
+  // Runs silently in the background so the Trust Profile populates without a manual click.
+  useEffect(() => {
+    if (!connected || !publicKey) return;
+    const wallet = publicKey.toBase58();
+    if (autoFetchedRef.current === wallet) return;
+    autoFetchedRef.current = wallet;
+    refreshTrustSignals({ silent: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [connected, publicKey]);
 
   // Handle X OAuth callback URL params
   useEffect(() => {
@@ -302,15 +347,35 @@ export default function TrustScorePage({ scoreData }) {
                   <p className="text-3xl font-bold text-white">+{totalTrustPts}</p>
                   <p className="text-xs text-brand-muted">of {maxTrustPts} possible trust signal points</p>
                 </div>
-                <div className="w-20 h-20">
-                  <svg viewBox="0 0 36 36" className="w-full h-full">
-                    <path d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="#1E1E2A" strokeWidth="3" />
-                    <path d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="url(#trustGrad2)" strokeWidth="3" strokeLinecap="round" strokeDasharray={`${trustPct}, 100`} />
-                    <defs><linearGradient id="trustGrad2"><stop offset="0%" stopColor="#EC81FF" /><stop offset="100%" stopColor="#B84FCC" /></linearGradient></defs>
-                    <text x="18" y="20" textAnchor="middle" className="fill-white text-[8px] font-bold">{trustPct}%</text>
-                  </svg>
+                <div className="flex flex-col items-end gap-2">
+                  <div className="w-20 h-20">
+                    <svg viewBox="0 0 36 36" className="w-full h-full">
+                      <path d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="#1E1E2A" strokeWidth="3" />
+                      <path d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="url(#trustGrad2)" strokeWidth="3" strokeLinecap="round" strokeDasharray={`${trustPct}, 100`} />
+                      <defs><linearGradient id="trustGrad2"><stop offset="0%" stopColor="#EC81FF" /><stop offset="100%" stopColor="#B84FCC" /></linearGradient></defs>
+                      <text x="18" y="20" textAnchor="middle" className="fill-white text-[8px] font-bold">{trustPct}%</text>
+                    </svg>
+                  </div>
+                  <button
+                    onClick={refreshTrustSignals}
+                    disabled={refreshing}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-brand-border text-brand-muted hover:text-white hover:bg-brand-accent/10 hover:border-brand-accent/20 border border-transparent transition-all disabled:opacity-50"
+                  >
+                    {refreshing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+                    Refresh
+                  </button>
                 </div>
               </div>
+              {refreshResult && (
+                <div className={`flex items-center gap-2 text-xs px-3 py-2 rounded-lg mb-3 ${refreshResult.success ? 'bg-green-500/10 text-green-400' : 'bg-red-500/10 text-red-400'}`}>
+                  {refreshResult.success ? <CheckCircle className="w-3.5 h-3.5 flex-shrink-0" /> : <XCircle className="w-3.5 h-3.5 flex-shrink-0" />}
+                  {refreshResult.success
+                    ? refreshResult.solDomain
+                      ? `Found .sol domain: ${refreshResult.solDomain}. Rescanning score...`
+                      : `Trust signals refreshed. Rescanning score...`
+                    : refreshResult.error || 'Refresh failed'}
+                </div>
+              )}
               <div className="h-2 bg-brand-border rounded-full overflow-hidden">
                 <motion.div className="h-full rounded-full" style={{ background: 'linear-gradient(90deg, #EC81FF, #B84FCC)' }} initial={{ width: 0 }} animate={{ width: `${trustPct}%` }} transition={{ duration: 1, ease: 'easeOut' }} />
               </div>
@@ -380,6 +445,33 @@ export default function TrustScorePage({ scoreData }) {
                 <TrustSignalCard icon={Zap} label="Credit Maturity" pts={breakdown.creditMaturity || 0} maxPts={SCORE_FACTORS.creditMaturity.max}
                   status={(breakdown.creditMaturity || 0) > 0 ? 'active' : 'inactive'} value="Bonus awarded as you climb through loan levels" delay={0.35} />
               </div>
+
+              {/* DeFi Protocol Detection */}
+              {scoreData?.detectedProtocols?.length > 0 && (
+                <>
+                  <h3 className="text-sm font-semibold text-white mt-6">Detected DeFi Protocols</h3>
+                  <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.38 }}
+                    className="bg-brand-card rounded-2xl border border-brand-border p-5">
+                    <div className="flex items-center gap-3 mb-3">
+                      <div className="w-10 h-10 rounded-xl bg-brand-accent/10 flex items-center justify-center flex-shrink-0">
+                        <Layers className="w-5 h-5 text-brand-accent" />
+                      </div>
+                      <div>
+                        <p className="text-sm font-bold text-white">On-Chain Protocol Activity</p>
+                        <p className="text-xs text-brand-muted">{scoreData.detectedProtocols.length} DeFi protocol{scoreData.detectedProtocols.length > 1 ? 's' : ''} detected in recent transactions</p>
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {scoreData.detectedProtocols.map((protocol) => (
+                        <span key={protocol} className="px-3 py-1.5 rounded-lg bg-brand-accent/10 border border-brand-accent/20 text-xs font-semibold text-brand-accent">
+                          {protocol}
+                        </span>
+                      ))}
+                    </div>
+                    <p className="text-[10px] text-brand-muted mt-3">Detected from your 20 most recent transactions. Protocol diversity contributes to your score.</p>
+                  </motion.div>
+                </>
+              )}
 
               <h3 className="text-sm font-semibold text-white mt-6">Privacy</h3>
               <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.4 }} className="bg-brand-card rounded-2xl border border-brand-border p-5">

@@ -123,6 +123,12 @@ export function useXAccount() {
     activity: postsCount >= 100 ? 35 : 0,
   };
 
+  // Full refresh — calls server status (authoritative) then Supabase cache
+  const refresh = useCallback(async () => {
+    await fetchServerStatus();
+    await fetchStatus();
+  }, [fetchServerStatus, fetchStatus]);
+
   return {
     connected,
     username,
@@ -137,7 +143,7 @@ export function useXAccount() {
     scoreBreakdown,
     startConnect,
     disconnect,
-    refresh: fetchStatus,
+    refresh,
     clearError: () => setError(null),
   };
 }
