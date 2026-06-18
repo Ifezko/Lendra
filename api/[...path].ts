@@ -4,18 +4,15 @@
 //   { "source": "/api/(.*)", "destination": "/api/[...path]" })
 // and are dispatched into the Fastify app via app.inject().
 //
-// IMPORTANT: This file MUST be TypeScript with a STATIC import of
-// `../server/app`. Vercel's @vercel/node bundler transpiles and inlines
-// statically-imported TypeScript through esbuild. The previous version was a
-// .js file using a DYNAMIC `await import('../server/app.js')`, which esbuild
-// left external — so at runtime Node tried to load the raw `server/app.ts`
-// re-export and crashed with ERR_UNKNOWN_FILE_EXTENSION. A static import of
-// the .ts module fixes the cold-start failure.
-//
-// server/app.ts imports only npm packages (fastify, @fastify/cors,
-// @upstash/redis, crypto) — no relative .ts imports — so the bundle is clean.
+// We import the Fastify app from ../server/app.js. The ".js" specifier is the
+// standard TypeScript-ESM convention: it resolves to server/app.ts under both
+// Vercel's TypeScript build and esbuild bundling, and at runtime loads the
+// compiled server/app.js. The previous version imported "../server/app"
+// extensionlessly and relied on a server/app.js stub that re-exported
+// "./app.ts"; in this ESM project ("type":"module") Node cannot load a .ts
+// module at runtime, so cold start crashed with ERR_MODULE_NOT_FOUND.
 
-import { buildApp } from '../server/app';
+import { buildApp } from '../server/app.js';
 
 let _app: any;
 
