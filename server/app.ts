@@ -95,19 +95,28 @@ const WSOL_MINT = 'So11111111111111111111111111111111111111112';
 
 // ?? .sol / SNS Reverse Lookup ?????????????????????????????????????????
 async function lookupSolDomain(wallet: string): Promise<string | null> {
-  try {
+  const base = 'https://sns-sdk-proxy.bonfida.workers.dev';
+  const fetchJson = async (path: string): Promise<any> => {
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), 5000);
-    const res = await fetch(`https://sns-sdk-proxy.bonfida.workers.dev/reverse-lookup/${wallet}`, {
-      headers: { 'Accept': 'application/json' },
-      signal: ctrl.signal,
-    });
-    clearTimeout(timer);
-    if (!res.ok) return null;
-    const data = await res.json();
-    if (data?.s === 'ok' && data?.result) {
-      const domain = String(data.result);
-      return domain.endsWith('.sol') ? domain : `${domain}.sol`;
+    try {
+      const res = await fetch(`${base}/${path}`, { headers: { Accept: 'application/json' }, signal: ctrl.signal });
+      clearTimeout(timer);
+      if (!res.ok) return null;
+      return await res.json();
+    } catch { clearTimeout(timer); return null; }
+  };
+  const norm = (d: string) => (d.endsWith('.sol') ? d : `${d}.sol`);
+  try {
+    // 1) The wallet's favourite / primary domain. NOTE: SNS "reverse-lookup"
+    //    takes a DOMAIN KEY, not a wallet - using it on a wallet returns
+    //    "Invalid input", which is why .sol never resolved before.
+    const fav = await fetchJson(`favorite-domain/${wallet}`);
+    if (fav?.s === 'ok' && fav?.result?.reverse) return norm(String(fav.result.reverse));
+    // 2) Fallback: first domain owned by the wallet
+    const owned = await fetchJson(`domains/${wallet}`);
+    if (owned?.s === 'ok' && Array.isArray(owned.result) && owned.result.length > 0 && owned.result[0]?.domain) {
+      return norm(String(owned.result[0].domain));
     }
     return null;
   } catch {
@@ -851,7 +860,19 @@ export async function buildApp(): Promise<FastifyInstance> {
       if (!userRes.ok) return reply.redirect(`${APP_URL}/trust-score?x=profile_error`);
       const u = (await userRes.json()).data;
       const ageDays = Math.floor((Date.now() - new Date(u.created_at).getTime()) / 86400000);
-      let xScore = 15 + (u.id ? 15 : 0) + (ageDays > 730 ? 35 : 0) + ((u.public_metrics?.tweet_count || 0) >= 100 ? 35 : 0);
+      const xFollowers = u.public_metrics?.followers_count || 0;
+      const xTweets = u.public_metrics?.tweet_count || 0;
+      // A dead / empty account (almost no posts AND almost no followers) should not count.
+      const xIsDead = xTweets < 5 && xFollowers < 5;
+      let xScore = 0;
+      if (!xIsDead) {
+        xScore = u.id ? 10 : 0;                                   // real, non-empty account
+        if (ageDays > 730) xScore += 25; else if (ageDays > 180) xScore += 10;   // account maturity
+        if (xTweets >= 100) xScore += 25; else if (xTweets >= 20) xScore += 10;  // posting activity
+        if (xFollowers >= 100) xScore += 25; else if (xFollowers >= 20) xScore += 10; // real audience
+        if (u.verified) xScore += 15;                            // verified badge
+        xScore = Math.min(100, xScore);
+      }
       try { await sbUpsert('wallet_profiles', { wallet_address: wa, x_user_id: u.id, x_username: u.username, x_display_name: u.name, x_profile_image: u.profile_image_url, x_account_created_at: u.created_at, x_account_age_days: ageDays, x_posts_count: u.public_metrics?.tweet_count || 0, x_followers_count: u.public_metrics?.followers_count || 0, x_following_count: u.public_metrics?.following_count || 0, x_connected: true, x_connected_at: new Date().toISOString(), x_verification_score: xScore, updated_at: new Date().toISOString() }); } catch {}
       try { await sbInsert('x_verification_events', { wallet_address: wa, x_user_id: u.id, event_type: 'x_connected', status: 'success', points_awarded: xScore, metadata: { x_username: u.username, x_account_age_days: ageDays, x_posts_count: u.public_metrics?.tweet_count || 0, x_followers_count: u.public_metrics?.followers_count || 0 } }); } catch {}
       try { await sbInsert('partner_events', { partner: 'x', event_type: 'x_connected', wallet_address: wa, metadata: { x_user_id: u.id, x_username: u.username, x_verification_score: xScore } }); } catch {}
