@@ -2160,7 +2160,27 @@ ${schemaJson ? `<script type="application/ld+json">${schemaJson}</script>` : ''}
   .faq-item h3 { font-size:15px; font-weight:600; color:#fff; margin-bottom:8px; }
   .faq-item p { font-size:14px; color:var(--brand-muted); line-height:1.6; }
 
-  .blog-footer { border-top:1px solid var(--brand-border); padding:32px 24px; text-align:center; color:var(--brand-muted); font-size:13px; }
+  .blog-footer { border-top:1px solid var(--brand-border); padding:48px 0 28px; margin-top:40px; color:var(--brand-muted); font-size:13px; }
+  .blog-footer-in { max-width:1200px; margin:0 auto; padding:0 24px; }
+  .blog-footer-grid { display:grid; grid-template-columns:1.6fr 1fr 1fr 1fr; gap:32px; }
+  .blog-footer-logo { display:flex; align-items:center; gap:8px; }
+  .blog-footer-logo img { width:30px; height:30px; border-radius:7px; }
+  .blog-footer-logo span { font-weight:700; font-size:16px; color:#fff; }
+  .blog-footer-brand p { color:var(--brand-muted); font-size:12px; line-height:1.6; max-width:260px; margin:12px 0 16px; }
+  .blog-footer-social { display:flex; gap:10px; }
+  .blog-footer-social a { width:32px; height:32px; border-radius:8px; border:1px solid var(--brand-border); background:#13131A; display:flex; align-items:center; justify-content:center; color:var(--brand-muted); transition:.15s; }
+  .blog-footer-social a:hover { color:var(--brand-accent); border-color:rgba(236,129,255,.3); }
+  .blog-footer-social svg { width:15px; height:15px; }
+  .blog-footer-col h4 { color:#fff; font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:.08em; margin:0 0 14px; }
+  .blog-footer-col a { display:block; color:var(--brand-muted); font-size:12px; margin-bottom:9px; transition:color .15s; }
+  .blog-footer-col a:hover { color:var(--brand-accent); text-decoration:none; }
+  .blog-footer-disc { border-top:1px solid var(--brand-border); margin-top:36px; padding-top:22px; color:rgba(173,173,181,.7); font-size:10px; line-height:1.6; max-width:680px; }
+  .blog-footer-bottom { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:12px; margin-top:18px; }
+  .blog-footer-bottom p { color:rgba(173,173,181,.6); font-size:10px; margin:0; }
+  .blog-footer-legal { display:flex; flex-wrap:wrap; gap:16px; }
+  .blog-footer-legal a { color:rgba(173,173,181,.6); font-size:10px; }
+  .blog-footer-legal a:hover { color:var(--brand-accent); text-decoration:none; }
+  @media (max-width:720px) { .blog-footer-grid { grid-template-columns:1fr 1fr; } }
 
   @media (max-width:640px) {
     .blog-hero h1 { font-size:28px; }
@@ -2179,14 +2199,36 @@ ${schemaJson ? `<script type="application/ld+json">${schemaJson}</script>` : ''}
         <small>Blog</small>
       </a>
       <nav class="blog-nav">
-        <a href="${APP_URL}/blog">Articles</a>
+        <a href="${APP_URL}">Home</a>
+        <a href="${APP_URL}/blog">Blog</a>
+        <a href="${APP_URL}/#how-it-works">How it works</a>
+        <a href="${APP_URL}/#faq">FAQ</a>
         <a href="${APP_URL}" class="btn-app">Launch App</a>
       </nav>
     </div>
   </header>
   ${bodyContent}
   <footer class="blog-footer">
-    <p>&copy; ${new Date().getFullYear()} Lendra Finance. Your wallet is your credit score.</p>
+    <div class="blog-footer-in">
+      <div class="blog-footer-grid">
+        <div class="blog-footer-brand">
+          <a href="${APP_URL}" class="blog-footer-logo"><img src="${APP_URL}/assets/lender-logo5x.png" alt="Lendra" /><span>Lendra</span></a>
+          <p>Your wallet is your credit score. Lendra turns wallet activity into borrowing power on Solana.</p>
+          <div class="blog-footer-social">
+            <a href="https://www.linkedin.com/company/lendrafinance" target="_blank" rel="noopener noreferrer" aria-label="LinkedIn"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 0 1-2.063-2.065 2.064 2.064 0 1 1 2.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/></svg></a>
+            <a href="https://x.com/lendrafinance" target="_blank" rel="noopener noreferrer" aria-label="X"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg></a>
+          </div>
+        </div>
+        <div class="blog-footer-col"><h4>Product</h4><a href="${APP_URL}">Scan Wallet</a><a href="${APP_URL}">Credit Score</a><a href="${APP_URL}">Borrow</a><a href="${APP_URL}">Private Mode</a></div>
+        <div class="blog-footer-col"><h4>Resources</h4><a href="${APP_URL}/blog">Blog</a><a href="${APP_URL}/#how-it-works">How it works</a><a href="${APP_URL}/#faq">FAQ</a><a href="${APP_URL}/blog/feed.xml">RSS</a></div>
+        <div class="blog-footer-col"><h4>Company</h4><a href="${APP_URL}">About</a><a href="${APP_URL}">Partnerships</a><a href="${APP_URL}">Contact</a></div>
+      </div>
+      <p class="blog-footer-disc">Lendra provides wallet-based credit scoring and DeFi access infrastructure. Lendra is not a bank. Loan availability may depend on partner protocols, jurisdiction, eligibility, and risk checks.</p>
+      <div class="blog-footer-bottom">
+        <p>&copy; ${new Date().getFullYear()} LENDRA. All rights reserved.</p>
+        <div class="blog-footer-legal"><a href="${APP_URL}">Privacy Policy</a><a href="${APP_URL}">Terms of Service</a><a href="${APP_URL}">Risk Disclosure</a><a href="${APP_URL}/blog/sitemap.xml">Sitemap</a></div>
+      </div>
+    </div>
   </footer>
 </body>
 </html>`;
