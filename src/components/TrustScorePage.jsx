@@ -150,6 +150,8 @@ export default function TrustScorePage({ scoreData, reloadScore }) {
     const isSuccess = xStatus === 'connected';
     setXToast({ message: messages[xStatus] || `X status: ${xStatus}`, type: isSuccess ? 'success' : 'error' });
     if (isSuccess) xAccount.refresh();
+    // Re-scan so freshly connected X verification points appear immediately.
+    if (isSuccess && typeof reloadScore === 'function') reloadScore();
     // Clean up URL params
     searchParams.delete('x');
     searchParams.delete('stage');
