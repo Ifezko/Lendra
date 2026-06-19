@@ -42,7 +42,7 @@ const BOOSTS = [
     icon: Globe,
     iconBg: 'bg-blue-500/10',
     iconColor: 'text-blue-400',
-    action: { type: 'link', to: '/trust-score', label: 'Connect wallets' },
+    action: { type: 'link', to: '/trust-score/cross-chain', label: 'Connect wallets' },
   },
   {
     key: 'solIdentity',

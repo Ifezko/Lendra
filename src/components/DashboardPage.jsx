@@ -280,10 +280,11 @@ export default function DashboardPage({ scoreData }) {
         {/* Trust Profile */}
         <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}>
           <Card>
-            <div className="flex items-center gap-2 mb-3">
+            <div className="flex items-center gap-2 mb-1">
               <Globe className="w-4 h-4 text-brand-accent" />
-              <h3 className="text-sm font-bold text-white">Trust Profile</h3>
+              <h3 className="text-sm font-bold text-white">Earned Trust Signals</h3>
             </div>
+            <p className="text-xs text-brand-muted leading-relaxed mb-3">Verified signals that strengthen your Lendra Score, separate from your wallet activity and DeFi history.</p>
             <div className="space-y-2">
               <div className="flex items-center justify-between text-xs">
                 <span className="text-brand-muted">.sol Identity</span>

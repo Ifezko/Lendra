@@ -43,15 +43,32 @@ export function useIkaCrossChain() {
     (async () => {
       try {
         const events = await getPartnerEvents(wallet, 'ika');
-        const bindings = events
-          .filter((e) => e.event_type === 'cross_chain_bind')
-          .map((e) => e.metadata)
-          .filter(Boolean);
-        if (bindings.length > 0) {
-          setConnectedChains(bindings);
-          const lastTx = events[0]?.metadata?.txSignature || null;
-          if (lastTx) setBindingTx(lastTx);
+        // events are newest-first. Reconcile bind/unbind so a wallet the user
+        // disconnected does not reappear after reload: keep a wallet only when
+        // its most recent event is a bind, and de-duplicate by chain+address.
+        const latestByKey = new Map();
+        for (const e of events) {
+          const md = e.metadata || {};
+          if (!md.address || !md.chain) continue;
+          const key = `${md.chain}:${md.address}`;
+          if (!latestByKey.has(key)) latestByKey.set(key, e.event_type);
         }
+        const seen = new Set();
+        const bindings = [];
+        for (const e of events) {
+          if (e.event_type !== 'cross_chain_bind') continue;
+          const md = e.metadata;
+          if (!md || !md.address || !md.chain) continue;
+          const key = `${md.chain}:${md.address}`;
+          if (seen.has(key)) continue;
+          if (latestByKey.get(key) !== 'cross_chain_bind') continue; // later unbound
+          seen.add(key);
+          bindings.push(md);
+        }
+        setConnectedChains(bindings);
+        localStorage.setItem('lendra-ika-chains', JSON.stringify(bindings));
+        const lastTx = events.find((e) => e.event_type === 'cross_chain_bind')?.metadata?.txSignature || null;
+        if (lastTx) setBindingTx(lastTx);
       } catch {
         // Fall back to localStorage
         try {
