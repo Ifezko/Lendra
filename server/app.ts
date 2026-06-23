@@ -1148,7 +1148,7 @@ export async function buildApp(): Promise<FastifyInstance> {
     if (!b?.wallet_address) return reply.code(400).send({ ok: false, error: 'wallet_address required' });
     try {
       const cardId = randomUUID();
-      const card = { id: cardId, wallet_address: b.wallet_address, sol_domain: b.sol_domain || null, score: b.score || 0, max_score: 1000, tier: b.tier || null, loan_level: b.loan_level || null, level_name: b.level_name || null, eligible: b.eligible || false, eligible_amount: b.eligible_amount || 0, borrow_asset: b.borrow_asset || 'USDC', public_share_url: `${APP_URL}/share/credit-card/${cardId}`, image_url: b.image_url || null, private_mode_confirmed: b.private_mode_confirmed || false };
+      const card = { id: cardId, wallet_address: b.wallet_address, sol_domain: b.sol_domain || null, score: b.score || 0, max_score: 1000, tier: b.tier || null, loan_level: b.loan_level || null, level_name: b.level_name || null, eligible: b.eligible || false, eligible_amount: b.eligible_amount || 0, borrow_asset: b.borrow_asset || 'USDC', public_share_url: `${APP_URL}/share/credit-card/${cardId}`, image_url: b.image_url || null, private_mode_confirmed: b.private_mode_confirmed || false, top_category: b.top_category || null };
       const result = await sbInsert('social_credit_cards', card);
       return { ok: true, card: result?.[0] || card };
     } catch (e: any) { return reply.code(500).send({ ok: false, error: e.message }); }

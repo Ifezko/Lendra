@@ -11,6 +11,7 @@ import TrustScorePage from './components/TrustScorePage';
 import BorrowPage from './components/BorrowPage';
 import RepayPage from './components/RepayPage';
 import CrossChainPage from './components/CrossChainPage';
+import WalletIntelligencePage from './components/WalletIntelligencePage';
 import AlertsPage from './components/AlertsPage';
 import SocialCreditCard from './components/SocialCreditCard';
 import LoadingState from './components/LoadingState';
@@ -254,6 +255,7 @@ function AppContent() {
                 <Route path="/dashboard" element={<DashboardPage scoreData={adjustedScoreData} />} />
                 <Route path="/trust-score" element={<TrustScorePage scoreData={adjustedScoreData} reloadScore={ctxValue.refreshScore} />} />
                 <Route path="/trust-score/cross-chain" element={<CrossChainPage />} />
+                <Route path="/wallet-intelligence" element={<WalletIntelligencePage />} />
                 <Route path="/borrow" element={<BorrowPage />} />
                 <Route path="/repay" element={<RepayPage />} />
                 <Route path="/position" element={<RepayPage />} />

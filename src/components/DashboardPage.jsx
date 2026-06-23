@@ -3,7 +3,7 @@ import { motion } from 'framer-motion';
 import { Link } from 'react-router-dom';
 import {
   BarChart3, ArrowDownToLine, Shield, CheckCircle, XCircle,
-  Brain, Share2, Globe, ChevronRight, Zap, Clock, TrendingUp, Lock,
+  Brain, Share2, Globe, ChevronRight, Zap, Clock, TrendingUp, Lock, Activity,
 } from 'lucide-react';
 import ScoreRing from './ScoreRing';
 import { useAppContext } from '../App';
@@ -99,6 +99,18 @@ export default function DashboardPage({ scoreData }) {
       >
         Dashboard
       </motion.h1>
+
+      {/* Single Wallet Intelligence preview entry (PRD 5.6.1 required flow) —
+          deliberately one slim link so it never competes with borrow/improve. */}
+      <Link
+        to="/wallet-intelligence"
+        className="flex items-center gap-3 mb-6 px-4 py-3 rounded-2xl border border-brand-accent/20 bg-brand-accent/5 hover:bg-brand-accent/10 transition-colors group"
+      >
+        <Activity className="w-4 h-4 text-brand-accent flex-shrink-0" />
+        <span className="text-sm text-white font-medium">Wallet Intelligence ready</span>
+        <span className="text-xs text-brand-muted hidden sm:inline">— view your full activity report</span>
+        <ChevronRight className="w-4 h-4 text-brand-accent ml-auto group-hover:translate-x-0.5 transition-transform" />
+      </Link>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         {/* Profile Summary */}

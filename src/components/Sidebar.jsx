@@ -3,12 +3,13 @@ import { Link, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   LayoutDashboard, ArrowDownToLine, ArrowUpFromLine,
-  Briefcase, ShieldCheck, History, Brain, FileText, HelpCircle, X, Bell,
+  Briefcase, ShieldCheck, History, Brain, FileText, HelpCircle, X, Bell, Activity,
 } from 'lucide-react';
 
 const NAV_ITEMS = [
   { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { to: '/trust-score', label: 'Trust Score', icon: ShieldCheck },
+  { to: '/wallet-intelligence', label: 'Wallet Intelligence', icon: Activity },
   { to: '/borrow', label: 'Borrow', icon: ArrowDownToLine },
   { to: '/repay', label: 'Repay', icon: ArrowUpFromLine },
   { to: '/position', label: 'Position', icon: Briefcase },
