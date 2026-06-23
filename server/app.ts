@@ -723,7 +723,7 @@ export async function buildApp(): Promise<FastifyInstance> {
 
     try {
       const WINDOW_DAYS = 90;
-      const MAX_TX = 2500; // hard bound to protect the RPC budget on huge wallets
+      const MAX_TX = 1500; // hard bound: protects RPC budget + fits the function time limit
       const cutoffMs = Date.now() - WINDOW_DAYS * 86400000;
 
       // SOL price (USD estimate only)

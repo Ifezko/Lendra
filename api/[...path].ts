@@ -14,6 +14,12 @@
 
 import { buildApp } from '../server/app.js';
 
+// Allow heavier endpoints (e.g. /api/wallet/intelligence, which does a bounded
+// full-90-day on-chain pass) more head-room than the 10s default. Vercel Hobby
+// permits up to 60s. Cold first runs of Wallet Intelligence can take a while;
+// per-signature Redis caching means a retry resumes from cache.
+export const config = { maxDuration: 60 };
+
 let _app: any;
 
 async function getApp() {
