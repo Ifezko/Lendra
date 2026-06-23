@@ -16,9 +16,9 @@ export default function WalletStats({ scoreData }) {
     { icon: Calendar, label: 'Active Months', value: `${scoreData.monthlyActivity}`, color: '#7CFF81' },
     { icon: Layers, label: 'Protocols Used', value: `${scoreData.protocolCount}`, color: '#FFD881' },
     { icon: Wallet, label: 'SOL Balance', value: `${tb.sol != null ? tb.sol.toFixed(4) : (scoreData.balanceSolOnly != null ? scoreData.balanceSolOnly.toFixed(2) : scoreData.balanceUsd.toFixed(2))} SOL`, color: '#FF8181', sensitive: true },
-    { icon: Activity, label: '90d Spend', value: `${scoreData.spend90d.toFixed(2)}`, color: '#81FFD4', sensitive: true },
-    ...(tb.usdc > 0 ? [{ icon: DollarSign, label: 'USDC Balance', value: `${tb.usdc.toFixed(2)}`, color: '#2775CA', sensitive: true }] : []),
-    ...(tb.usdt > 0 ? [{ icon: DollarSign, label: 'USDT Balance', value: `${tb.usdt.toFixed(2)}`, color: '#26A17B', sensitive: true }] : []),
+    { icon: Activity, label: '90d Spend', value: `$${scoreData.spend90d.toFixed(2)}`, color: '#81FFD4', sensitive: true },
+    ...(tb.usdc > 0 ? [{ icon: DollarSign, label: 'USDC Balance', value: `$${tb.usdc.toFixed(2)}`, color: '#2775CA', sensitive: true }] : []),
+    ...(tb.usdt > 0 ? [{ icon: DollarSign, label: 'USDT Balance', value: `$${tb.usdt.toFixed(2)}`, color: '#26A17B', sensitive: true }] : []),
     ...(scoreData.detectedProtocols?.length ? [{ icon: Hash, label: 'DeFi Protocols', value: scoreData.detectedProtocols.join(', '), color: '#EC81FF' }] : []),
   ];
 
