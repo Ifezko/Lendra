@@ -114,9 +114,9 @@ export default function DashboardPage({ scoreData }) {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         {/* Profile Summary */}
-        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }}>
-          <Card className="lg:row-span-2">
-            <div className="flex flex-col items-center text-center">
+        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }} className="lg:row-span-2">
+          <Card className="h-full">
+            <div className="flex flex-col items-center justify-center text-center h-full">
               <div className="scale-75 -my-4">
                 <ScoreRing score={score} tier={tier} />
               </div>
