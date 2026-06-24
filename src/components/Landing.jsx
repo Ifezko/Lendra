@@ -16,10 +16,6 @@ import {
   Globe,
   ShieldCheck,
   Server,
-  Layers,
-  Coins,
-  Flame,
-  ListChecks,
   Activity,
   X,
 } from 'lucide-react';
@@ -390,13 +386,6 @@ export default function Landing() {
   const [openFaq, setOpenFaq] = useState(-1);
   const [sampleOpen, setSampleOpen] = useState(false);
 
-  const WI_CARDS = [
-    { icon: Layers, title: 'Protocol Activity', desc: "The products and protocols your wallet has used, grouped into simple categories — swaps, lending, LP/yield, and stablecoin transfers." },
-    { icon: Coins, title: 'Stablecoin Behavior', desc: 'Your USDC and USDT activity — sent, received, transaction count, and consistency.' },
-    { icon: Flame, title: 'Fees Spent', desc: 'Your network and priority fees, shown in SOL.' },
-    { icon: ListChecks, title: 'Areas to Improve', desc: 'Simple next steps to strengthen your profile before borrowing.' },
-  ];
-
   const FEATURES = [
     { icon: Shield, title: 'Wallet-Based Credit', desc: 'Your onchain activity becomes your credit history. No long forms, no bank paperwork.' },
     { icon: Zap, title: 'Instant Scoring', desc: 'Connect your wallet and get a real-time credit profile built from your Solana activity.' },
@@ -434,7 +423,7 @@ export default function Landing() {
                 <span className="bg-gradient-to-r from-brand-accent to-brand-accentDark bg-clip-text text-transparent">credit score.</span>
               </h1>
               <p className="text-base md:text-lg text-brand-muted max-w-lg mb-8 leading-relaxed">
-                Scan your Solana wallet to see your Lendra Score, your borrowing power, and Wallet Intelligence — a clear view of your protocol activity, stablecoin behavior, and network fees.
+                Scan your Solana wallet to see your Lendra Score, unlock Wallet Intelligence, and discover your borrowing power based on real onchain behavior.
               </p>
               <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 mb-6">
                 <WalletMultiButton className="!rounded-xl !font-bold !text-sm !h-12 !px-8 !bg-brand-accent !text-[#0A0A0F]">Scan Wallet</WalletMultiButton>
@@ -524,56 +513,6 @@ export default function Landing() {
               </React.Fragment>
             ))}
           </motion.div>
-        </div>
-      </section>
-
-      {/* ── WALLET INTELLIGENCE ───────────────────────────── */}
-      <section id="wallet-intelligence" className="py-20 border-t border-brand-border/50">
-        <div className="max-w-5xl mx-auto px-4">
-          <motion.div className="text-center mb-12" initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }}>
-            <h2 className="text-2xl md:text-3xl font-bold text-white mb-3">See the activity behind your Lendra Score</h2>
-            <p className="text-sm text-brand-muted max-w-2xl mx-auto leading-relaxed">
-              Lendra does more than show a number. After scanning, you see the activity behind your wallet profile — the protocols you've used, your stablecoin behavior, active days, and network fees spent. No raw program IDs. Just clear insights you can use to strengthen your profile before you borrow.
-            </p>
-          </motion.div>
-
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-start">
-            {/* Four feature cards */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {WI_CARDS.map((card, i) => {
-                const Icon = card.icon;
-                return (
-                  <motion.div
-                    key={card.title}
-                    className="p-5 rounded-2xl border border-brand-border bg-brand-card/50 hover:border-brand-accent/20 transition-colors"
-                    initial={{ opacity: 0, y: 20 }}
-                    whileInView={{ opacity: 1, y: 0 }}
-                    viewport={{ once: true }}
-                    transition={{ delay: 0.08 * i }}
-                  >
-                    <div className="w-10 h-10 rounded-xl bg-brand-accent/10 flex items-center justify-center mb-3">
-                      <Icon className="w-5 h-5 text-brand-accent" />
-                    </div>
-                    <p className="text-sm font-semibold text-white mb-1">{card.title}</p>
-                    <p className="text-xs text-brand-muted leading-relaxed">{card.desc}</p>
-                  </motion.div>
-                );
-              })}
-            </div>
-
-            {/* Static mock report */}
-            <motion.div initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ delay: 0.2 }}>
-              <SampleReportCard />
-              <div className="mt-4 text-center">
-                <button
-                  onClick={() => setSampleOpen(true)}
-                  className="inline-flex items-center gap-2 text-xs font-semibold text-brand-accent hover:underline"
-                >
-                  See sample Wallet Intelligence <ArrowRight className="w-3.5 h-3.5" />
-                </button>
-              </div>
-            </motion.div>
-          </div>
         </div>
       </section>
 
