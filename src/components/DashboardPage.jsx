@@ -243,7 +243,7 @@ export default function DashboardPage({ scoreData }) {
 
         {/* Active Loan / Position */}
         <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.25 }}>
-          <Card>
+          <Card className="h-full flex flex-col">
             <div className="flex items-center gap-2 mb-3">
               <TrendingUp className="w-4 h-4 text-brand-accent" />
               <h3 className="text-sm font-bold text-white">Position</h3>
@@ -274,12 +274,12 @@ export default function DashboardPage({ scoreData }) {
                 </Link>
               </div>
             ) : (
-              <div>
+              <div className="flex-1 flex flex-col justify-center">
                 <p className="text-xs text-brand-muted mb-3">No active loan.</p>
                 {canBorrow && (
                   <Link
                     to="/borrow"
-                    className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-brand-accent/10 border border-brand-accent/20 text-brand-accent text-xs font-semibold"
+                    className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-brand-accent/10 border border-brand-accent/20 text-brand-accent text-xs font-semibold self-start"
                   >
                     Borrow now <ChevronRight className="w-3 h-3" />
                   </Link>
@@ -291,7 +291,7 @@ export default function DashboardPage({ scoreData }) {
 
         {/* Trust Profile */}
         <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}>
-          <Card>
+          <Card className="h-full flex flex-col">
             <div className="flex items-center gap-2 mb-1">
               <Globe className="w-4 h-4 text-brand-accent" />
               <h3 className="text-sm font-bold text-white">Earned Trust Signals</h3>
@@ -325,16 +325,17 @@ export default function DashboardPage({ scoreData }) {
             </div>
             <Link
               to="/trust-score"
-              className="block w-full text-center mt-3 px-4 py-2 rounded-xl border border-brand-accent/20 text-brand-accent text-xs font-semibold hover:bg-brand-accent/5 transition-colors"
+              className="block w-full text-center mt-auto pt-3 px-4 py-2 rounded-xl border border-brand-accent/20 text-brand-accent text-xs font-semibold hover:bg-brand-accent/5 transition-colors"
             >
               Boost trust profile
             </Link>
           </Card>
         </motion.div>
 
-        {/* Lendra AI */}
-        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.35 }}>
-          <Card>
+        {/* Lendra AI + Share Credit Card stacked — the two short cards share one
+            column so it balances against the taller Earned Trust Signals card. */}
+        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.35 }} className="flex flex-col gap-4">
+          <Card className="flex-1">
             <div className="flex items-center gap-2 mb-3">
               <Brain className="w-4 h-4 text-brand-accent" />
               <h3 className="text-sm font-bold text-white">Lendra AI</h3>
@@ -349,28 +350,20 @@ export default function DashboardPage({ scoreData }) {
               Ask about my score
             </button>
           </Card>
-        </motion.div>
-
-        {/* Social Credit Card — full-width banner so the bottom row has no gap */}
-        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.4 }} className="lg:col-span-3">
-          <Card>
-            <div className="flex flex-col sm:flex-row sm:items-center gap-4">
-              <div className="flex items-center gap-3 flex-1 min-w-0">
-                <div className="w-10 h-10 rounded-xl bg-brand-accent/10 flex items-center justify-center flex-shrink-0">
-                  <Share2 className="w-5 h-5 text-brand-accent" />
-                </div>
-                <div className="min-w-0">
-                  <h3 className="text-sm font-bold text-white">Share Credit Card</h3>
-                  <p className="text-xs text-brand-muted">Generate a shareable Lendra credit card and post it to X.</p>
-                </div>
-              </div>
-              <Link
-                to="/share"
-                className="text-center px-5 py-2.5 rounded-xl border border-brand-accent/20 text-brand-accent text-xs font-semibold hover:bg-brand-accent/5 transition-colors sm:flex-shrink-0"
-              >
-                Generate share card
-              </Link>
+          <Card className="flex-1">
+            <div className="flex items-center gap-2 mb-3">
+              <Share2 className="w-4 h-4 text-brand-accent" />
+              <h3 className="text-sm font-bold text-white">Share Credit Card</h3>
             </div>
+            <p className="text-xs text-brand-muted mb-3">
+              Generate a shareable Lendra credit card and post it to X.
+            </p>
+            <Link
+              to="/share"
+              className="block w-full text-center px-4 py-2 rounded-xl border border-brand-accent/20 text-brand-accent text-xs font-semibold hover:bg-brand-accent/5 transition-colors"
+            >
+              Generate share card
+            </Link>
           </Card>
         </motion.div>
 
