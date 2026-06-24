@@ -13,18 +13,29 @@ export default function Header({ onMenuToggle, showMenu }) {
   return (
     <header className="sticky top-0 z-30 backdrop-blur-xl bg-brand-bg/80 border-b border-brand-border">
       <div className="max-w-6xl mx-auto px-4 h-14 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          {/* Mobile hamburger */}
+        <div className="flex items-center gap-2">
+          {/* Mobile: hamburger + logo (on desktop the sidebar shows the logo) */}
           {showMenu && (
-            <button
-              onClick={onMenuToggle}
-              className="lg:hidden p-2 rounded-lg text-brand-muted hover:text-white hover:bg-brand-cardHover transition-colors"
-            >
-              <Menu className="w-5 h-5" />
-            </button>
+            <>
+              <button
+                onClick={onMenuToggle}
+                aria-label="Open menu"
+                className="lg:hidden -ml-1 p-2 rounded-lg text-brand-muted hover:text-white hover:bg-brand-cardHover transition-colors"
+              >
+                <Menu className="w-5 h-5" />
+              </button>
+              <div className="lg:hidden flex items-center gap-2">
+                <img
+                  src={`${import.meta.env.BASE_URL}assets/lender-logo5x.png`}
+                  alt="Lendra"
+                  className="w-7 h-7 rounded-lg"
+                />
+                <span className="text-base font-bold text-white tracking-tight">Lendra</span>
+              </div>
+            </>
           )}
 
-          {/* Show logo only when sidebar is hidden (landing / not connected) */}
+          {/* Landing / not connected (sidebar hidden everywhere) */}
           {!showMenu && (
             <div className="flex items-center gap-3">
               <img
