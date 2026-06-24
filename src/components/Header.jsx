@@ -41,7 +41,9 @@ export default function Header({ onMenuToggle, showMenu }) {
         )}
 
         {/* ── Right ──────────────────────────────────────────── */}
-        <div className="flex items-center gap-2">
+        {/* ml-auto keeps this pinned right even on desktop, where the left
+            logo element is display:none (so justify-between alone wouldn't). */}
+        <div className="flex items-center gap-2 ml-auto">
           {showMenu ? (
             <>
               {/* Desktop account controls (on mobile these move into the drawer) */}
