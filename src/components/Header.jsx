@@ -1,22 +1,28 @@
 import React from 'react';
-import { WalletMultiButton } from '@solana/wallet-adapter-react-ui';
+import { Link } from 'react-router-dom';
+import { WalletMultiButton, useWalletModal } from '@solana/wallet-adapter-react-ui';
 import { useWallet } from '@solana/wallet-adapter-react';
-import { Menu, Lock, Loader2, Hash } from 'lucide-react';
+import { Menu, Lock, Loader2, Hash, Brain, Bell, Wallet } from 'lucide-react';
 import { useAppContext } from '../App';
 
 export default function Header({ onMenuToggle, showMenu }) {
   const { connected } = useWallet();
+  const { setVisible } = useWalletModal();
   const ctx = useAppContext();
   const privateMode = ctx?.privateMode;
   const solDomain = ctx?.scoreData?.solDomain;
+
+  // Shared style for the compact mobile icon buttons (Kamino-style).
+  const iconBtn =
+    'flex items-center justify-center w-9 h-9 rounded-lg border transition-colors';
 
   return (
     <header className="sticky top-0 z-30 backdrop-blur-xl bg-brand-bg/80 border-b border-brand-border">
       <div className="max-w-6xl mx-auto px-4 h-14 flex items-center justify-between">
         {/* ── Left: logo ─────────────────────────────────────── */}
         {showMenu ? (
-          // In-app: the logo lives in the sidebar on desktop, so the header
-          // only needs it on mobile (where the sidebar is hidden).
+          // In-app: desktop shows the logo in the sidebar, so the header only
+          // needs it on mobile (where the sidebar is hidden).
           <div className="lg:hidden flex items-center gap-2">
             <img
               src={`${import.meta.env.BASE_URL}assets/lender-logo5x.png`}
@@ -26,7 +32,7 @@ export default function Header({ onMenuToggle, showMenu }) {
             <span className="text-lg font-bold text-white tracking-tight">Lendra</span>
           </div>
         ) : (
-          // Landing / not connected: logo shown at all sizes.
+          // Landing / not connected: logo at all sizes.
           <div className="flex items-center gap-3">
             <img
               src={`${import.meta.env.BASE_URL}assets/lender-logo5x.png`}
@@ -46,7 +52,7 @@ export default function Header({ onMenuToggle, showMenu }) {
         <div className="flex items-center gap-2 ml-auto">
           {showMenu ? (
             <>
-              {/* Desktop account controls (on mobile these move into the drawer) */}
+              {/* Desktop: .sol + private + full wallet button */}
               <div className="hidden lg:flex items-center gap-2">
                 {connected && solDomain && (
                   <div
@@ -90,14 +96,41 @@ export default function Header({ onMenuToggle, showMenu }) {
                 <WalletMultiButton />
               </div>
 
-              {/* Mobile: hamburger on the right (opens the drawer) */}
-              <button
-                onClick={onMenuToggle}
-                aria-label="Open menu"
-                className="lg:hidden -mr-1 p-2 rounded-lg text-brand-muted hover:text-white hover:bg-brand-cardHover transition-colors"
-              >
-                <Menu className="w-5 h-5" />
-              </button>
+              {/* Mobile: compact icon row (AI · Alerts · Wallet · Menu) */}
+              <div className="lg:hidden flex items-center gap-1.5">
+                <button
+                  onClick={() => ctx?.openAiDrawer?.()}
+                  aria-label="Lendra AI"
+                  className={`${iconBtn} bg-brand-card border-brand-border text-brand-muted hover:text-white hover:border-brand-accent/30`}
+                >
+                  <Brain className="w-4 h-4" />
+                </button>
+                <Link
+                  to="/alerts"
+                  aria-label="Alerts"
+                  className={`${iconBtn} bg-brand-card border-brand-border text-brand-muted hover:text-white hover:border-brand-accent/30`}
+                >
+                  <Bell className="w-4 h-4" />
+                </Link>
+                <button
+                  onClick={() => (connected ? onMenuToggle?.() : setVisible(true))}
+                  aria-label={connected ? 'Wallet' : 'Connect wallet'}
+                  className={`${iconBtn} ${
+                    connected
+                      ? 'bg-brand-accent/15 border-brand-accent/30 text-brand-accent'
+                      : 'bg-brand-card border-brand-border text-brand-muted hover:text-white hover:border-brand-accent/30'
+                  }`}
+                >
+                  <Wallet className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={onMenuToggle}
+                  aria-label="Open menu"
+                  className={`${iconBtn} bg-brand-card border-brand-border text-brand-muted hover:text-white hover:border-brand-accent/30`}
+                >
+                  <Menu className="w-4 h-4" />
+                </button>
+              </div>
             </>
           ) : (
             // Landing: wallet CTA at all sizes
