@@ -42,6 +42,20 @@ body {
   justify-content: center !important;
 }
 
+/* Compact wallet button in the mobile header icon row — shows the connected
+   wallet's logo + short address, sized to match the 36px icon buttons. */
+.header-wallet .wallet-adapter-button {
+  height: 36px !important;
+  padding: 0 10px !important;
+  font-size: 12px !important;
+  border-radius: 8px !important;
+}
+.header-wallet .wallet-adapter-button-start-icon,
+.header-wallet .wallet-adapter-button-start-icon img {
+  width: 16px !important;
+  height: 16px !important;
+}
+
 @keyframes pulse-glow {
   0%, 100% { filter: drop-shadow(0 0 8px rgba(236, 129, 255, 0.3)); }
   50% { filter: drop-shadow(0 0 20px rgba(236, 129, 255, 0.6)); }

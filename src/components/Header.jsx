@@ -2,7 +2,7 @@ import React from 'react';
 import { Link } from 'react-router-dom';
 import { WalletMultiButton, useWalletModal } from '@solana/wallet-adapter-react-ui';
 import { useWallet } from '@solana/wallet-adapter-react';
-import { Menu, Lock, Loader2, Hash, Brain, Bell, Wallet } from 'lucide-react';
+import { Menu, Lock, Loader2, Hash, Bell, Wallet } from 'lucide-react';
 import { useAppContext } from '../App';
 
 export default function Header({ onMenuToggle, showMenu }) {
@@ -96,15 +96,23 @@ export default function Header({ onMenuToggle, showMenu }) {
                 <WalletMultiButton />
               </div>
 
-              {/* Mobile: compact icon row (AI · Alerts · Wallet · Menu) */}
+              {/* Mobile: compact icon row (Private · Alerts · Wallet · Menu) */}
               <div className="lg:hidden flex items-center gap-1.5">
-                <button
-                  onClick={() => ctx?.openAiDrawer?.()}
-                  aria-label="Lendra AI"
-                  className={`${iconBtn} bg-brand-card border-brand-border text-brand-muted hover:text-white hover:border-brand-accent/30`}
-                >
-                  <Brain className="w-4 h-4" />
-                </button>
+                {connected && privateMode && (
+                  <button
+                    onClick={() => privateMode.togglePrivateMode()}
+                    disabled={privateMode.isEncrypting}
+                    aria-label={privateMode.isPrivate ? 'Private mode on' : 'Enable private mode'}
+                    aria-pressed={privateMode.isPrivate}
+                    className={`${iconBtn} ${
+                      privateMode.isPrivate
+                        ? 'bg-purple-500/15 border-purple-500/30 text-purple-400'
+                        : 'bg-brand-card border-brand-border text-brand-muted hover:text-white hover:border-brand-accent/30'
+                    }`}
+                  >
+                    {privateMode.isEncrypting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Lock className="w-4 h-4" />}
+                  </button>
+                )}
                 <Link
                   to="/alerts"
                   aria-label="Alerts"
@@ -112,17 +120,21 @@ export default function Header({ onMenuToggle, showMenu }) {
                 >
                   <Bell className="w-4 h-4" />
                 </Link>
-                <button
-                  onClick={() => (connected ? onMenuToggle?.() : setVisible(true))}
-                  aria-label={connected ? 'Wallet' : 'Connect wallet'}
-                  className={`${iconBtn} ${
-                    connected
-                      ? 'bg-brand-accent/15 border-brand-accent/30 text-brand-accent'
-                      : 'bg-brand-card border-brand-border text-brand-muted hover:text-white hover:border-brand-accent/30'
-                  }`}
-                >
-                  <Wallet className="w-4 h-4" />
-                </button>
+                {/* Wallet connect — shows the connected wallet's logo (native
+                    button with disconnect dropdown); a plain icon when not connected. */}
+                {connected ? (
+                  <div className="header-wallet">
+                    <WalletMultiButton />
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => setVisible(true)}
+                    aria-label="Connect wallet"
+                    className={`${iconBtn} bg-brand-card border-brand-border text-brand-muted hover:text-white hover:border-brand-accent/30`}
+                  >
+                    <Wallet className="w-4 h-4" />
+                  </button>
+                )}
                 <button
                   onClick={onMenuToggle}
                   aria-label="Open menu"
