@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { WalletMultiButton } from '@solana/wallet-adapter-react-ui';
 import {
   Shield,
@@ -11,12 +11,17 @@ import {
   BarChart3,
   TrendingUp,
   ArrowRight,
-  ChevronDown,
   Minus,
   Plus,
   Globe,
   ShieldCheck,
   Server,
+  Layers,
+  Coins,
+  Flame,
+  ListChecks,
+  Activity,
+  X,
 } from 'lucide-react';
 
 // ─── Animated Hero Score Card ─────────────────────────────────────────
@@ -259,14 +264,138 @@ function Footer() {
   );
 }
 
+// ─── Sample Wallet Intelligence report (static, safe data) ────────────
+
+function ReportRow({ left, right }) {
+  return (
+    <div className="flex items-center justify-between gap-3 text-xs">
+      <span className="text-brand-muted">{left}</span>
+      <span className="text-white font-medium text-right">{right}</span>
+    </div>
+  );
+}
+
+// Static sample only — no wallet, RPC, or scoring involved. Borrowing power
+// always carries the "Simulation — pool not yet live" marker.
+function SampleReportCard({ className = '' }) {
+  return (
+    <div className={`bg-brand-card border border-brand-border rounded-2xl p-6 ${className}`}>
+      <div className="flex items-center gap-2 mb-5">
+        <div className="w-8 h-8 rounded-lg bg-brand-accent/10 flex items-center justify-center">
+          <Activity className="w-4 h-4 text-brand-accent" />
+        </div>
+        <span className="text-sm font-bold text-white">Wallet Intelligence</span>
+        <span className="ml-auto text-[10px] font-medium text-brand-muted px-2 py-0.5 rounded-full border border-brand-border">
+          Sample
+        </span>
+      </div>
+
+      <p className="text-[10px] uppercase tracking-wider text-brand-muted mb-2">Top activity</p>
+      <div className="space-y-2 mb-5">
+        <ReportRow left="Swap / DEX — Jupiter" right="18 swaps" />
+        <ReportRow left="Lending — Kamino" right="4 interactions" />
+        <ReportRow left="Stablecoins" right="12 USDC/USDT transactions" />
+      </div>
+
+      <p className="text-[10px] uppercase tracking-wider text-brand-muted mb-2">Fees</p>
+      <div className="mb-5">
+        <ReportRow left="Network + priority fees" right="~0.3 SOL" />
+      </div>
+
+      <p className="text-[10px] uppercase tracking-wider text-brand-muted mb-2">Profile signals</p>
+      <div className="space-y-2 mb-5">
+        <ReportRow left="Stablecoin usage" right="Moderate" />
+        <ReportRow left="Protocol activity" right="Active" />
+        <ReportRow left="Repayment history" right="Not started" />
+      </div>
+
+      <div className="pt-4 border-t border-brand-border">
+        <div className="flex items-center justify-between">
+          <span className="text-xs text-brand-muted">Borrowing power</span>
+          <span className="text-sm font-bold text-white">$50 USDC</span>
+        </div>
+        <div className="mt-2 inline-flex items-center gap-1.5 px-2 py-1 rounded-full bg-yellow-500/10 border border-yellow-500/20">
+          <span className="w-1.5 h-1.5 rounded-full bg-yellow-400 flex-shrink-0" />
+          <span className="text-[10px] font-medium text-yellow-300">Simulation — pool not yet live</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Accessible sample modal: Esc to close, backdrop click, focus moves to close
+// button, body scroll locked while open.
+function SampleReportModal({ open, onClose }) {
+  const closeRef = useRef(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e) => { if (e.key === 'Escape') onClose(); };
+    document.addEventListener('keydown', onKey);
+    const focusTimer = setTimeout(() => closeRef.current?.focus(), 0);
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      clearTimeout(focusTimer);
+      document.body.style.overflow = prevOverflow;
+    };
+  }, [open, onClose]);
+
+  return (
+    <AnimatePresence>
+      {open && (
+        <motion.div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+        >
+          <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={onClose} aria-hidden="true" />
+          <motion.div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="sample-wi-title"
+            className="relative w-full max-w-md"
+            initial={{ opacity: 0, y: 20, scale: 0.97 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 20, scale: 0.97 }}
+            transition={{ duration: 0.2 }}
+          >
+            <div className="flex items-center justify-between mb-3">
+              <h2 id="sample-wi-title" className="text-sm font-semibold text-white">Sample Wallet Intelligence</h2>
+              <button
+                ref={closeRef}
+                onClick={onClose}
+                aria-label="Close sample Wallet Intelligence"
+                className="w-8 h-8 rounded-lg bg-brand-card border border-brand-border flex items-center justify-center text-brand-muted hover:text-white hover:border-brand-accent/30 transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <SampleReportCard />
+            <p className="text-[10px] text-brand-muted/70 mt-3 text-center">
+              Sample data shown for illustration. Connect your wallet to generate your own.
+            </p>
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
+}
+
 // ─── Main Landing Page ────────────────────────────────────────────────
 
 export default function Landing() {
   const [openFaq, setOpenFaq] = useState(-1);
+  const [sampleOpen, setSampleOpen] = useState(false);
 
-  const scrollToHow = () => {
-    document.getElementById('how-it-works')?.scrollIntoView({ behavior: 'smooth' });
-  };
+  const WI_CARDS = [
+    { icon: Layers, title: 'Protocol Activity', desc: "The products and protocols your wallet has used, grouped into simple categories — swaps, lending, LP/yield, and stablecoin transfers." },
+    { icon: Coins, title: 'Stablecoin Behavior', desc: 'Your USDC and USDT activity — sent, received, transaction count, and consistency.' },
+    { icon: Flame, title: 'Fees Spent', desc: 'Your network and priority fees, shown in SOL.' },
+    { icon: ListChecks, title: 'Areas to Improve', desc: 'Simple next steps to strengthen your profile before borrowing.' },
+  ];
 
   const FEATURES = [
     { icon: Shield, title: 'Wallet-Based Credit', desc: 'Your onchain activity becomes your credit history. No long forms, no bank paperwork.' },
@@ -301,16 +430,16 @@ export default function Landing() {
                 <span className="text-[11px] font-semibold text-brand-accent tracking-wide uppercase">Live on Solana Mainnet</span>
               </div>
               <h1 className="text-3xl sm:text-4xl md:text-5xl font-extrabold text-white leading-[1.1] mb-5">
-                Turn wallet activity<br />into{' '}
-                <span className="bg-gradient-to-r from-brand-accent to-brand-accentDark bg-clip-text text-transparent">borrowing power.</span>
+                Your wallet is your{' '}
+                <span className="bg-gradient-to-r from-brand-accent to-brand-accentDark bg-clip-text text-transparent">credit score.</span>
               </h1>
               <p className="text-base md:text-lg text-brand-muted max-w-lg mb-8 leading-relaxed">
-                Lendra scans your Solana wallet, builds a credit profile, and shows what you can borrow based on real onchain behavior.
+                Scan your Solana wallet to see your Lendra Score, your borrowing power, and Wallet Intelligence — a clear view of your protocol activity, stablecoin behavior, and network fees.
               </p>
               <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 mb-6">
                 <WalletMultiButton className="!rounded-xl !font-bold !text-sm !h-12 !px-8 !bg-brand-accent !text-[#0A0A0F]">Scan Wallet</WalletMultiButton>
-                <button onClick={scrollToHow} className="flex items-center gap-2 px-5 h-12 rounded-xl border border-brand-border text-sm font-semibold text-brand-muted hover:text-white hover:border-brand-accent/30 transition-colors">
-                  See how it works <ChevronDown className="w-4 h-4" />
+                <button onClick={() => setSampleOpen(true)} className="flex items-center gap-2 px-5 h-12 rounded-xl border border-brand-border text-sm font-semibold text-brand-muted hover:text-white hover:border-brand-accent/30 transition-colors">
+                  See sample Wallet Intelligence <ArrowRight className="w-4 h-4" />
                 </button>
               </div>
               <div className="flex items-center gap-6 text-brand-muted">
@@ -398,6 +527,56 @@ export default function Landing() {
         </div>
       </section>
 
+      {/* ── WALLET INTELLIGENCE ───────────────────────────── */}
+      <section id="wallet-intelligence" className="py-20 border-t border-brand-border/50">
+        <div className="max-w-5xl mx-auto px-4">
+          <motion.div className="text-center mb-12" initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }}>
+            <h2 className="text-2xl md:text-3xl font-bold text-white mb-3">See the activity behind your Lendra Score</h2>
+            <p className="text-sm text-brand-muted max-w-2xl mx-auto leading-relaxed">
+              Lendra does more than show a number. After scanning, you see the activity behind your wallet profile — the protocols you've used, your stablecoin behavior, active days, and network fees spent. No raw program IDs. Just clear insights you can use to strengthen your profile before you borrow.
+            </p>
+          </motion.div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-start">
+            {/* Four feature cards */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {WI_CARDS.map((card, i) => {
+                const Icon = card.icon;
+                return (
+                  <motion.div
+                    key={card.title}
+                    className="p-5 rounded-2xl border border-brand-border bg-brand-card/50 hover:border-brand-accent/20 transition-colors"
+                    initial={{ opacity: 0, y: 20 }}
+                    whileInView={{ opacity: 1, y: 0 }}
+                    viewport={{ once: true }}
+                    transition={{ delay: 0.08 * i }}
+                  >
+                    <div className="w-10 h-10 rounded-xl bg-brand-accent/10 flex items-center justify-center mb-3">
+                      <Icon className="w-5 h-5 text-brand-accent" />
+                    </div>
+                    <p className="text-sm font-semibold text-white mb-1">{card.title}</p>
+                    <p className="text-xs text-brand-muted leading-relaxed">{card.desc}</p>
+                  </motion.div>
+                );
+              })}
+            </div>
+
+            {/* Static mock report */}
+            <motion.div initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ delay: 0.2 }}>
+              <SampleReportCard />
+              <div className="mt-4 text-center">
+                <button
+                  onClick={() => setSampleOpen(true)}
+                  className="inline-flex items-center gap-2 text-xs font-semibold text-brand-accent hover:underline"
+                >
+                  See sample Wallet Intelligence <ArrowRight className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        </div>
+      </section>
+
       {/* ── PRIVATE CREDIT ────────────────────────────────── */}
       <section className="py-20 border-t border-brand-border/50">
         <div className="max-w-5xl mx-auto px-4">
@@ -457,6 +636,9 @@ export default function Landing() {
 
       {/* ── FOOTER ────────────────────────────────────────── */}
       <Footer />
+
+      {/* Sample Wallet Intelligence modal (opened from hero / section CTAs) */}
+      <SampleReportModal open={sampleOpen} onClose={() => setSampleOpen(false)} />
     </div>
   );
 }
