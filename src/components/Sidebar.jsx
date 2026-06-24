@@ -54,6 +54,33 @@ export default function Sidebar({ isOpen, onClose, onOpenAi }) {
         </button>
       </div>
 
+      {/* Mobile-only account controls — kept at the top of the drawer so they're
+          the first thing users see (desktop shows these in the header). */}
+      <div className="lg:hidden border-b border-brand-border px-3 py-3 space-y-2 flex-shrink-0">
+        <div className="sidebar-wallet">
+          <WalletMultiButton />
+        </div>
+        {connected && privateMode && (
+          <button
+            onClick={() => privateMode.togglePrivateMode()}
+            disabled={privateMode.isEncrypting}
+            className={`w-full flex items-center justify-between gap-2 px-3 py-2.5 rounded-xl text-sm font-medium transition-all border ${
+              privateMode.isPrivate
+                ? 'bg-purple-500/15 text-purple-400 border-purple-500/30'
+                : 'bg-brand-card text-brand-muted border-brand-border hover:text-white'
+            }`}
+          >
+            <span className="flex items-center gap-2">
+              {privateMode.isEncrypting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Lock className="w-4 h-4" />}
+              Private mode
+            </span>
+            <span className={`w-8 h-4 rounded-full transition-colors relative ${privateMode.isPrivate ? 'bg-purple-500' : 'bg-brand-border'}`}>
+              <span className={`absolute top-0.5 w-3 h-3 rounded-full bg-white transition-transform ${privateMode.isPrivate ? 'translate-x-4' : 'translate-x-0.5'}`} />
+            </span>
+          </button>
+        )}
+      </div>
+
       {/* Main Nav */}
       <nav className="flex-1 min-h-0 overflow-y-auto py-3 px-3 space-y-0.5 sidebar-scroll">
         {NAV_ITEMS.map((item) => {
@@ -88,30 +115,6 @@ export default function Sidebar({ isOpen, onClose, onOpenAi }) {
           Lendra AI
         </button>
       </nav>
-
-      {/* Mobile-only account controls (desktop shows these in the header) */}
-      <div className="lg:hidden border-t border-brand-border px-3 py-3 space-y-2 flex-shrink-0">
-        {connected && privateMode && (
-          <button
-            onClick={() => privateMode.togglePrivateMode()}
-            disabled={privateMode.isEncrypting}
-            className={`w-full flex items-center justify-between gap-2 px-3 py-2.5 rounded-xl text-sm font-medium transition-all border ${
-              privateMode.isPrivate
-                ? 'bg-purple-500/15 text-purple-400 border-purple-500/30'
-                : 'bg-brand-card text-brand-muted border-brand-border hover:text-white'
-            }`}
-          >
-            <span className="flex items-center gap-2">
-              {privateMode.isEncrypting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Lock className="w-4 h-4" />}
-              Private mode
-            </span>
-            <span className={`w-8 h-4 rounded-full transition-colors relative ${privateMode.isPrivate ? 'bg-purple-500' : 'bg-brand-border'}`}>
-              <span className={`absolute top-0.5 w-3 h-3 rounded-full bg-white transition-transform ${privateMode.isPrivate ? 'translate-x-4' : 'translate-x-0.5'}`} />
-            </span>
-          </button>
-        )}
-        <WalletMultiButton className="!w-full !justify-center !rounded-xl !h-11 !bg-brand-accent !text-[#0A0A0F] !font-semibold !text-sm" />
-      </div>
 
       {/* Bottom Links */}
       <div className="border-t border-brand-border px-3 py-3 space-y-0.5 flex-shrink-0">

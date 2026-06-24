@@ -31,6 +31,17 @@ body {
   transform: translateY(-1px) !important;
 }
 
+/* Full-width wallet button inside the mobile sidebar drawer.
+   The adapter wraps the button in an inline-block .wallet-adapter-dropdown,
+   so we stretch the wrapper too — otherwise the button only fills its
+   content-width. Keeps the global gradient styling. */
+.sidebar-wallet { width: 100%; }
+.sidebar-wallet .wallet-adapter-dropdown { display: block; width: 100%; }
+.sidebar-wallet .wallet-adapter-button {
+  width: 100% !important;
+  justify-content: center !important;
+}
+
 @keyframes pulse-glow {
   0%, 100% { filter: drop-shadow(0 0 8px rgba(236, 129, 255, 0.3)); }
   50% { filter: drop-shadow(0 0 20px rgba(236, 129, 255, 0.6)); }
