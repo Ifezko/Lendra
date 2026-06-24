@@ -351,22 +351,26 @@ export default function DashboardPage({ scoreData }) {
           </Card>
         </motion.div>
 
-        {/* Social Credit Card */}
-        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.4 }}>
+        {/* Social Credit Card — full-width banner so the bottom row has no gap */}
+        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.4 }} className="lg:col-span-3">
           <Card>
-            <div className="flex items-center gap-2 mb-3">
-              <Share2 className="w-4 h-4 text-brand-accent" />
-              <h3 className="text-sm font-bold text-white">Share Credit Card</h3>
+            <div className="flex flex-col sm:flex-row sm:items-center gap-4">
+              <div className="flex items-center gap-3 flex-1 min-w-0">
+                <div className="w-10 h-10 rounded-xl bg-brand-accent/10 flex items-center justify-center flex-shrink-0">
+                  <Share2 className="w-5 h-5 text-brand-accent" />
+                </div>
+                <div className="min-w-0">
+                  <h3 className="text-sm font-bold text-white">Share Credit Card</h3>
+                  <p className="text-xs text-brand-muted">Generate a shareable Lendra credit card and post it to X.</p>
+                </div>
+              </div>
+              <Link
+                to="/share"
+                className="text-center px-5 py-2.5 rounded-xl border border-brand-accent/20 text-brand-accent text-xs font-semibold hover:bg-brand-accent/5 transition-colors sm:flex-shrink-0"
+              >
+                Generate share card
+              </Link>
             </div>
-            <p className="text-xs text-brand-muted mb-3">
-              Generate a shareable Lendra credit card and post it to X.
-            </p>
-            <Link
-              to="/share"
-              className="block w-full text-center px-4 py-2 rounded-xl border border-brand-accent/20 text-brand-accent text-xs font-semibold hover:bg-brand-accent/5 transition-colors"
-            >
-              Generate share card
-            </Link>
           </Card>
         </motion.div>
 
