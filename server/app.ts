@@ -324,6 +324,38 @@ function getLoanLevelServer(score: number, cleanRepayments: number, hasXVer: boo
   return current;
 }
 
+// Solana system/infra programs that are NOT "protocols" — used so historical
+// interactions with unknown programs can be labelled "unable to verify"
+// (§5.6.8.7) instead of being silently dropped, while ignoring plumbing.
+const SYSTEM_PROGRAMS = new Set<string>([
+  '11111111111111111111111111111111',             // System
+  'ComputeBudget111111111111111111111111111111',  // Compute Budget
+  'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA',  // SPL Token
+  'TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb',  // Token-2022
+  'ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL', // Associated Token
+  'MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr',  // Memo v2
+  'Memo1UhkJRfHyvLMcVucJwxXeuD728EqVDDwQDxFMNo',  // Memo v1
+  'Vote111111111111111111111111111111111111111',  // Vote
+]);
+
+// §5.6.8.5 — wallet age in human units. Never raw days as the headline.
+function humanWalletAge(firstTxMs: number | null): { label: string; verified: boolean; first_seen: string | null } {
+  if (!firstTxMs) return { label: 'Age unverified', verified: false, first_seen: null };
+  const first_seen = new Date(firstTxMs).toISOString();
+  const days = Math.floor((Date.now() - firstTxMs) / 86400000);
+  if (days < 1) return { label: 'Today', verified: true, first_seen };
+  if (days < 365) {
+    const months = Math.max(1, Math.round(days / 30));
+    return { label: `${months} month${months === 1 ? '' : 's'}`, verified: true, first_seen };
+  }
+  const years = Math.floor(days / 365);
+  const remMonths = Math.round((days % 365) / 30);
+  const label = remMonths > 0
+    ? `${years} year${years === 1 ? '' : 's'} ${remMonths} month${remMonths === 1 ? '' : 's'}`
+    : `${years} year${years === 1 ? '' : 's'}`;
+  return { label, verified: true, first_seen };
+}
+
 async function serverRpc(rpcUrl: string, method: string, params: any[] = []) {
   const maxAttempts = 5;
   let lastErr: any = null;
@@ -713,51 +745,86 @@ export async function buildApp(): Promise<FastifyInstance> {
     const rpcUrl = getQuicknodeHttpUrl();
     if (!rpcUrl) return reply.code(500).send({ ok: false, stage: 'quicknode_rpc_config', error: 'QuickNode Solana HTTP RPC URL is required.' });
 
-    const CACHE_KEY = `wi:${wallet_address}`;
-    if (!refresh) {
-      try {
-        const cached = await redis.get<any>(CACHE_KEY);
-        if (cached) return { ok: true, cached: true, data: typeof cached === 'string' ? JSON.parse(cached) : cached };
-      } catch {}
+    const round = (n: number, d = 4) => Math.round(n * 10 ** d) / 10 ** d;
+
+    // Assemble the report from a persisted profile row. DISPLAY-ONLY: none of
+    // these fields feed the score (§7.1 stays recency-anchored).
+    const assemble = (src: any) => {
+      const firstMs = src?.first_tx_at ? new Date(src.first_tx_at).getTime() : null;
+      const net = Number(src?.last_network_fees_sol) || 0;
+      const pri = Number(src?.last_priority_fees_sol) || 0;
+      return {
+        history_complete: !!src?.history_complete,
+        history_scanned_at: src?.history_scanned_at || null,
+        wallet_age: humanWalletAge(firstMs),
+        lifetime_tx_count: src?.lifetime_tx_count ?? null,
+        cadence: { active_months: src?.active_months ?? null, total_months: src?.total_months ?? null },
+        unverified_activity_count: src?.unverified_activity_count ?? 0,
+        liquidity: { floor_usd: src?.liquidity_floor_usd ?? null, days: src?.liquidity_floor_days ?? null },
+        fees: { network_sol: src?.last_network_fees_sol ?? null, priority_sol: src?.last_priority_fees_sol ?? null, total_sol: round(net + pri, 6), precision: 'exact' },
+        stablecoin_flow: { sent_usd: src?.last_stablecoin_sent_usd ?? null, received_usd: src?.last_stablecoin_received_usd ?? null, tx_count: src?.last_stablecoin_tx_count ?? null },
+        protocol_activity: src?.protocol_activity || [],
+        top_category: src?.top_protocol_category || null,
+        top_category_label: src?.top_protocol_category ? CATEGORY_LABEL[src.top_protocol_category] : null,
+      };
+    };
+
+    // The deep-pass result is persisted in the DB, so a normal page view returns
+    // cached data and NEVER re-runs the heavy RPC pass (§5.6.8.7). Recompute only
+    // on explicit "Refresh Wallet Scan" (or the first-ever open).
+    let profile: any = null;
+    try { const p = await sbSelect('wallet_profiles', `select=*&wallet_address=eq.${wallet_address}&limit=1`); profile = p?.[0] || null; } catch {}
+    if (!refresh && profile?.history_scanned_at) {
+      return { ok: true, computing: false, source: 'cache', data: assemble(profile) };
     }
 
     try {
-      const WINDOW_DAYS = 90;
-      const MAX_TX = 1500; // hard bound: protects RPC budget + fits the function time limit
-      const cutoffMs = Date.now() - WINDOW_DAYS * 86400000;
+      const MAX_SIG = 20000;      // lifetime signature-pagination bound (cheap; signatures only)
+      const MAX_TX_DETAIL = 1500; // bounded getTransaction window (fees/protocols/stablecoin/liquidity)
+      const POOL = 20;
 
-      // SOL price (USD estimate only)
       let solPrice = 0;
       try {
         const pr = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=solana&vs_currencies=usd');
         if (pr.ok) { const pd = await pr.json(); solPrice = pd?.solana?.usd || 0; }
       } catch {}
 
-      // 1) Paginate signatures within the 90-day window (bounded by MAX_TX)
-      const sigList: string[] = [];
+      // (1) Signatures-only full-history pagination -> lifetime count, cadence, first tx.
+      const detailSigs: string[] = [];
+      const monthSet = new Set<string>();
+      let lifetimeCount = 0, oldestBlockTime = 0;
       let before: string | undefined;
-      let windowComplete = true;
-      while (sigList.length < MAX_TX) {
-        const params: any[] = [wallet_address, { limit: 1000, commitment: 'confirmed', ...(before ? { before } : {}) }];
-        const page: any[] = await serverRpc(rpcUrl, 'getSignaturesForAddress', params);
+      let historyComplete = true;
+      while (lifetimeCount < MAX_SIG) {
+        const page: any[] = await serverRpc(rpcUrl, 'getSignaturesForAddress', [wallet_address, { limit: 1000, commitment: 'confirmed', ...(before ? { before } : {}) }]);
         if (!page || page.length === 0) break;
-        let reachedCutoff = false;
         for (const s of page) {
-          if (s.blockTime && s.blockTime * 1000 < cutoffMs) { reachedCutoff = true; break; }
-          sigList.push(s.signature);
-          if (sigList.length >= MAX_TX) break;
+          lifetimeCount++;
+          if (s.blockTime) {
+            const d = new Date(s.blockTime * 1000);
+            monthSet.add(`${d.getFullYear()}-${d.getMonth()}`);
+            oldestBlockTime = s.blockTime;
+          }
+          if (detailSigs.length < MAX_TX_DETAIL) detailSigs.push(s.signature);
+          if (lifetimeCount >= MAX_SIG) break;
         }
         before = page[page.length - 1]?.signature;
-        if (reachedCutoff || page.length < 1000) break;
+        if (page.length < 1000) break; // reached wallet creation
       }
-      if (sigList.length >= MAX_TX) windowComplete = false;
+      if (lifetimeCount >= MAX_SIG) historyComplete = false;
+      // first_tx is only trustworthy when we reached the end (else age is "unverified", §5.6.8.5).
+      const firstTxMs = historyComplete && oldestBlockTime ? oldestBlockTime * 1000 : null;
+      const totalMonths = firstTxMs ? Math.max(1, Math.round((Date.now() - firstTxMs) / (86400000 * 30))) : null;
+      const activeMonths = monthSet.size;
 
-      // 2) Fetch each tx (cached per-signature) with bounded concurrency
-      let networkLamports = 0, priorityLamports = 0, totalLamports = 0;
-      let stableSentUsd = 0, stableRecvUsd = 0, stableTxCount = 0, feeTxCount = 0;
+      // (2) Bounded getTransaction detail pass: fees, protocol activity (+ unable-to-verify
+      // count), stablecoin flow, and a USDC balance series for liquidity stability.
+      let networkLamports = 0, priorityLamports = 0;
+      let stableSentUsd = 0, stableRecvUsd = 0, stableTxCount = 0, feeTxCount = 0, unverifiedTxCount = 0;
       const protoCounts: Record<string, number> = {};
+      const usdcSeries: { t: number; bal: number }[] = [];
 
-      const stableDelta = (arr: any[]): Record<string, number> => {
+      const ownerStable = (arr: any[]): Record<string, number> => {
         const m: Record<string, number> = {};
         for (const b of (arr || [])) {
           if ((b.mint === USDC_MINT || b.mint === USDT_MINT) && b.owner === wallet_address) {
@@ -767,54 +834,56 @@ export async function buildApp(): Promise<FastifyInstance> {
         return m;
       };
 
-      const POOL = 20;
-      for (let i = 0; i < sigList.length; i += POOL) {
-        const chunk = sigList.slice(i, i + POOL);
+      for (let i = 0; i < detailSigs.length; i += POOL) {
+        const chunk = detailSigs.slice(i, i + POOL);
         await Promise.all(chunk.map(async (sig) => {
           try {
-            const cacheK = `txfee:${sig}`;
-            let cached: any = null;
-            try { cached = await redis.get<any>(cacheK); } catch {}
-            if (cached) {
-              const c = typeof cached === 'string' ? JSON.parse(cached) : cached;
-              totalLamports += c.f || 0; networkLamports += c.b || 0; priorityLamports += c.pr || 0; feeTxCount++;
-              stableSentUsd += c.ss || 0; stableRecvUsd += c.sr || 0; if (c.st) stableTxCount++;
-              for (const n of (c.p || [])) protoCounts[n] = (protoCounts[n] || 0) + 1;
-              return;
+            const cacheK = `txd:${sig}`;
+            let rec: any = null;
+            try { const c = await redis.get<any>(cacheK); rec = c ? (typeof c === 'string' ? JSON.parse(c) : c) : null; } catch {}
+            if (!rec) {
+              const tx = await serverRpc(rpcUrl, 'getTransaction', [sig, { encoding: 'jsonParsed', maxSupportedTransactionVersion: 0, commitment: 'confirmed' }]);
+              const meta = tx?.meta; const msg = tx?.transaction?.message;
+              if (!meta) return;
+              const fee = meta.fee || 0;
+              const numSigs = (tx?.transaction?.signatures?.length) || (msg?.header?.numRequiredSignatures) || 1;
+              const base = Math.min(fee, 5000 * numSigs);
+              const priority = Math.max(0, fee - base);
+              // Programs come from instruction programIds (not all account keys), so
+              // unknown programs can be flagged "unable to verify" without overcounting.
+              const known: string[] = []; const seen = new Set<string>(); let hasUnverified = false;
+              for (const ix of (msg?.instructions || [])) {
+                const pid = typeof ix?.programId === 'string' ? ix.programId : ix?.programId?.toString?.();
+                if (!pid) continue;
+                const nm = KNOWN_PROTOCOLS[pid];
+                if (nm) { if (!seen.has(nm)) { seen.add(nm); known.push(nm); } }
+                else if (!SYSTEM_PROGRAMS.has(pid)) hasUnverified = true;
+              }
+              const preM = ownerStable(meta.preTokenBalances); const postM = ownerStable(meta.postTokenBalances);
+              let ss = 0, sr = 0, touched = false;
+              for (const k of new Set<string>([...Object.keys(preM), ...Object.keys(postM)])) {
+                const dlt = (postM[k] || 0) - (preM[k] || 0);
+                if (dlt > 0) sr += dlt; else if (dlt < 0) ss += -dlt;
+                if (dlt !== 0) touched = true;
+              }
+              let usdcPost: number | null = null;
+              for (const b of (meta.postTokenBalances || [])) {
+                if (b.mint === USDC_MINT && b.owner === wallet_address) usdcPost = parseFloat(b.uiTokenAmount?.uiAmountString ?? b.uiTokenAmount?.uiAmount ?? 0) || 0;
+              }
+              rec = { f: fee, b: base, pr: priority, p: known, u: hasUnverified ? 1 : 0, ss, sr, st: touched ? 1 : 0, bt: tx?.blockTime || 0, ub: usdcPost };
+              try { await redis.set(cacheK, JSON.stringify(rec), { ex: 60 * 60 * 24 * 30 }); } catch {}
             }
-            const tx = await serverRpc(rpcUrl, 'getTransaction', [sig, { encoding: 'jsonParsed', maxSupportedTransactionVersion: 0, commitment: 'confirmed' }]);
-            const meta = tx?.meta; const msg = tx?.transaction?.message;
-            if (!meta) return;
-            const fee = meta.fee || 0;
-            const numSigs = (tx?.transaction?.signatures?.length) || (msg?.header?.numRequiredSignatures) || 1;
-            const base = Math.min(fee, 5000 * numSigs);
-            const priority = Math.max(0, fee - base);
-            const names: string[] = []; const seen = new Set<string>();
-            for (const k of (msg?.accountKeys || [])) {
-              const addr = typeof k === 'string' ? k : k?.pubkey;
-              const nm = addr && KNOWN_PROTOCOLS[addr];
-              if (nm && !seen.has(nm)) { seen.add(nm); names.push(nm); }
-            }
-            const preM = stableDelta(meta.preTokenBalances); const postM = stableDelta(meta.postTokenBalances);
-            let ss = 0, sr = 0, touched = false;
-            for (const k of new Set<string>([...Object.keys(preM), ...Object.keys(postM)])) {
-              const d = (postM[k] || 0) - (preM[k] || 0);
-              if (d > 0) sr += d; else if (d < 0) ss += -d;
-              if (d !== 0) touched = true;
-            }
-            totalLamports += fee; networkLamports += base; priorityLamports += priority; feeTxCount++;
-            stableSentUsd += ss; stableRecvUsd += sr; if (touched) stableTxCount++;
-            for (const n of names) protoCounts[n] = (protoCounts[n] || 0) + 1;
-            try { await redis.set(cacheK, JSON.stringify({ f: fee, b: base, pr: priority, p: names, ss, sr, st: touched ? 1 : 0 }), { ex: 60 * 60 * 24 * 30 }); } catch {}
+            networkLamports += rec.b || 0; priorityLamports += rec.pr || 0; feeTxCount++;
+            stableSentUsd += rec.ss || 0; stableRecvUsd += rec.sr || 0; if (rec.st) stableTxCount++;
+            if (rec.u) unverifiedTxCount++;
+            for (const n of (rec.p || [])) protoCounts[n] = (protoCounts[n] || 0) + 1;
+            if (rec.bt && rec.ub != null) usdcSeries.push({ t: rec.bt * 1000, bal: rec.ub });
           } catch {}
         }));
       }
 
-      const round = (n: number, d = 4) => Math.round(n * 10 ** d) / 10 ** d;
       const networkFeesSol = round(networkLamports / 1e9, 6);
       const priorityFeesSol = round(priorityLamports / 1e9, 6);
-      const totalFeesSol = round(totalLamports / 1e9, 6);
-      const feesUsd = solPrice > 0 ? round(totalFeesSol * solPrice, 2) : null;
       const stablecoinSentUsd = round(stableSentUsd, 2);
       const stablecoinReceivedUsd = round(stableRecvUsd, 2);
 
@@ -822,66 +891,77 @@ export async function buildApp(): Promise<FastifyInstance> {
         const category = PROTOCOL_CATEGORY[name] || 'other';
         return { name, interactions, category, category_label: CATEGORY_LABEL[category] };
       }).sort((a, b) => b.interactions - a.interactions);
-
-      // top category across protocol categories + stablecoin transfers ('other' excluded)
       const catTotals: Record<string, number> = {};
       for (const p of protocolActivity) catTotals[p.category] = (catTotals[p.category] || 0) + p.interactions;
       if (stableTxCount > 0) catTotals['stablecoin'] = (catTotals['stablecoin'] || 0) + stableTxCount;
       let topCategory: string | null = null; let topCount = -1;
       for (const [c, n] of Object.entries(catTotals)) { if (c !== 'other' && n > topCount) { topCount = n; topCategory = c; } }
-      const topCategoryLabel = topCategory ? CATEGORY_LABEL[topCategory] : null;
 
-      const data = {
-        window_days: WINDOW_DAYS,
-        window_complete: windowComplete,
-        tx_scanned: feeTxCount,
-        fees: {
-          network_sol: networkFeesSol,
-          priority_sol: priorityFeesSol,
-          total_sol: totalFeesSol,
-          usd: feesUsd,
-          tx_count: feeTxCount,
-          precision: 'exact',
-        },
-        stablecoin_flow: {
-          sent_usd: stablecoinSentUsd,
-          received_usd: stablecoinReceivedUsd,
-          tx_count: stableTxCount,
-        },
+      // §5.6.8.3 liquidity stability from the scanned USDC balance series (observation only).
+      let floorUsd: number | null = null; let floorDays: number | null = null;
+      if (usdcSeries.length >= 2) {
+        let min = Infinity, minT = Infinity, maxT = -Infinity;
+        for (const s of usdcSeries) { if (s.bal < min) min = s.bal; if (s.t < minT) minT = s.t; if (s.t > maxT) maxT = s.t; }
+        floorUsd = round(Math.max(0, Math.floor(min)), 2);
+        floorDays = Math.max(0, Math.round((maxT - minT) / 86400000));
+      }
+
+      // Current balances -> a server-only portfolio snapshot.
+      const tokenData = await fetchSplTokenBalances(rpcUrl, wallet_address).catch(() => ({ usdc: 0, usdt: 0, all: {} as Record<string, number> }));
+      let solBal = 0;
+      try { const b = await serverRpc(rpcUrl, 'getBalance', [wallet_address, { commitment: 'confirmed' }]); solBal = (b?.value || 0) / 1e9; } catch {}
+      try {
+        await sbInsert('portfolio_snapshots', {
+          wallet_address, sol_balance: round(solBal, 4), usdc_balance: round(tokenData.usdc || 0, 2),
+          usdt_balance: round(tokenData.usdt || 0, 2),
+          total_usd: round(solBal * solPrice + (tokenData.usdc || 0) + (tokenData.usdt || 0), 2),
+          source: 'deep_pass',
+        });
+      } catch {}
+
+      const profileUpdate: any = {
+        wallet_address,
+        updated_at: new Date().toISOString(),
+        history_scanned_at: new Date().toISOString(),
+        history_complete: historyComplete,
+        first_tx_at: firstTxMs ? new Date(firstTxMs).toISOString() : null,
+        lifetime_tx_count: lifetimeCount,
+        active_months: activeMonths,
+        total_months: totalMonths,
+        unverified_activity_count: unverifiedTxCount,
+        liquidity_floor_usd: floorUsd,
+        liquidity_floor_days: floorDays,
+        last_network_fees_sol: networkFeesSol,
+        last_priority_fees_sol: priorityFeesSol,
+        last_stablecoin_sent_usd: stablecoinSentUsd,
+        last_stablecoin_received_usd: stablecoinReceivedUsd,
+        last_stablecoin_tx_count: stableTxCount,
+        top_protocol_category: topCategory,
         protocol_activity: protocolActivity,
-        top_category: topCategory,
-        top_category_label: topCategoryLabel,
-        sol_price_usd: solPrice || null,
-        computed_at: new Date().toISOString(),
       };
-
-      // Persist (best-effort): latest wallet_scans row + wallet_profiles mirror
+      try { await sbUpsert('wallet_profiles', profileUpdate); } catch {}
+      // Mirror WI fields onto the latest scan row (display only; never scored).
       try {
         const latest = await sbSelect('wallet_scans', `select=id&wallet_address=eq.${wallet_address}&order=created_at.desc&limit=1`);
         const id = latest?.[0]?.id;
         if (id) {
           await sbUpdate('wallet_scans', {
-            network_fees_sol: networkFeesSol, priority_fees_sol: priorityFeesSol, total_fees_sol: totalFeesSol,
-            fees_usd: feesUsd, fee_tx_count: feeTxCount, activity_window_days: WINDOW_DAYS,
-            stablecoin_sent_usd: stablecoinSentUsd, stablecoin_received_usd: stablecoinReceivedUsd, stablecoin_tx_count: stableTxCount,
-            protocol_activity: protocolActivity,
+            network_fees_sol: networkFeesSol, priority_fees_sol: priorityFeesSol, total_fees_sol: round(networkFeesSol + priorityFeesSol, 6),
+            fees_usd: solPrice > 0 ? round((networkFeesSol + priorityFeesSol) * solPrice, 2) : null,
+            fee_tx_count: feeTxCount, stablecoin_sent_usd: stablecoinSentUsd, stablecoin_received_usd: stablecoinReceivedUsd,
+            stablecoin_tx_count: stableTxCount, protocol_activity: protocolActivity,
           }, `id=eq.${id}`);
         }
       } catch {}
-      try {
-        await sbUpsert('wallet_profiles', {
-          wallet_address,
-          updated_at: new Date().toISOString(),
-          last_network_fees_sol: networkFeesSol, last_priority_fees_sol: priorityFeesSol,
-          last_stablecoin_sent_usd: stablecoinSentUsd, last_stablecoin_received_usd: stablecoinReceivedUsd,
-          last_stablecoin_tx_count: stableTxCount,
-          top_protocol_category: topCategory, protocol_activity: protocolActivity,
-        });
-      } catch {}
 
-      try { await redis.set(CACHE_KEY, JSON.stringify(data), { ex: 60 * 60 * 6 }); } catch {}
-
-      return { ok: true, cached: false, data };
+      return {
+        ok: true,
+        computing: false,
+        source: 'fresh',
+        history_complete: historyComplete,
+        tx_detail_scanned: feeTxCount,
+        data: assemble(profileUpdate),
+      };
     } catch (err: any) {
       console.error('[wallet/intelligence] Error:', err.message);
       return reply.code(500).send({ ok: false, stage: 'wi_error', error: err.message });
