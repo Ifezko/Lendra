@@ -2,6 +2,7 @@ import Fastify, { FastifyInstance } from 'fastify';
 import cors from '@fastify/cors';
 import { Redis } from '@upstash/redis';
 import { randomUUID, getRandomValues, createHash, scryptSync, randomBytes, timingSafeEqual } from 'crypto';
+import { SCORE_VERSION } from './scoring-config.js';
 
 // ?? Environment ??????????????????????????????????????????????????????
 
@@ -395,6 +396,8 @@ async function persistScanServer(wallet: string, result: any, repStats: any, pre
     tier: tier.label, loan_level: loanLevel.level, level_name: loanLevel.label,
     eligible: canBorrow, eligibility_status: canBorrow ? 'eligible' : 'not_eligible',
     base_score: BASE_SCORE,
+    score_version: SCORE_VERSION, scan_window: '90d', // §7: tie score to frozen config; fast pass
+
     wallet_age_points: breakdown.age, transaction_volume_points: breakdown.volume,
     monthly_consistency_points: breakdown.consistency, protocol_diversity_points: breakdown.diversity,
     portfolio_value_points: breakdown.portfolio, repayment_history_points: breakdown.repayment,
@@ -1054,6 +1057,42 @@ export async function buildApp(): Promise<FastifyInstance> {
       return reply.code(500).send({ ok: false, error: e.message });
     }
   });
+
+  // == WALLET CREDIT API — DEFAULT-DENY GATE (§11.3.1, SCAFFOLD ONLY) ====
+  // Wave 4 per §11.3.1: the partner request flow, partner auth, consent screen,
+  // Telegram consent notification, and settings dashboard are NOT built here.
+  // This is ONLY the gate: no active consent grant -> no data. Every call is
+  // logged to partner_access_log. Raw counterparty/balance time-series never
+  // leave the backend (§11.3).
+  app.post('/api/partner/wallet-credit', async (req, reply) => {
+    const { partner_id, wallet_address } = (req.body as any) || {};
+    if (!partner_id || !wallet_address) {
+      return reply.code(400).send({ ok: false, error: 'partner_id and wallet_address required' });
+    }
+    let grant: any = null;
+    try {
+      const g = await sbSelect('consent_grants', `select=id,scopes,status,expires_at&wallet_address=eq.${wallet_address}&partner_id=eq.${partner_id}&status=eq.active&order=granted_at.desc&limit=1`);
+      grant = g?.[0] || null;
+      if (grant?.expires_at && new Date(grant.expires_at).getTime() < Date.now()) grant = null;
+    } catch {}
+
+    if (!grant) {
+      try { await sbInsert('partner_access_log', { partner_id, wallet_address, endpoint: '/api/partner/wallet-credit', result: 'denied_no_consent', fields_returned: [] }); } catch {}
+      return reply.code(403).send({ ok: false, error: 'no active consent grant' });
+    }
+
+    // Wave 4 per §11.3.1: with a valid grant the scoped, verified-precision-only
+    // payload would be assembled and returned here. Not built yet.
+    try { await sbInsert('partner_access_log', { partner_id, wallet_address, grant_id: grant.id, endpoint: '/api/partner/wallet-credit', result: 'granted', fields_returned: [] }); } catch {}
+    return reply.code(501).send({ ok: false, error: 'wallet credit payload not yet available (Wave 4 per §11.3.1)' });
+  });
+
+  // ── DO NOT BUILD (Section F) — explicit deferral markers ─────────────
+  // Recurring-inflow / income detection: deferred per §5.6.8.6 (never label
+  //   anything "income"; liquidity stability §5.6.8.3 is the shipped substitute).
+  // Live-rank-into-score: permanently prohibited per §7.2.6 (see scoring-config.ts).
+  // Protocol-fee estimation: Phase 2 per §5.6.3 (network + priority fees only now).
+  // Live loan issuance: pilot-gated per §8.1 (simulation + waitlist only).
 
   // ?? BORROW APPLY (legacy standalone route) ???????????????????????
   app.post('/api/borrow/apply', async (req, reply) => {
