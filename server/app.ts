@@ -1014,6 +1014,47 @@ export async function buildApp(): Promise<FastifyInstance> {
     }
   });
 
+  // == PEER PERCENTILE (§5.6.8.2) ===================================
+  // "More active than N% of wallets scanned on Lendra." DISPLAY-ONLY — never a
+  // score input. Population = latest scan per scanned wallet (deduped, bounded).
+  // The selection-bias qualifier is mandatory and travels with the payload so
+  // the report/card always render it.
+  app.get('/api/wallet/peer-percentile', async (req, reply) => {
+    const wallet = (req.query as any)?.wallet;
+    if (!wallet) return reply.code(400).send({ ok: false, error: 'wallet required' });
+    try {
+      const mine = await sbSelect('wallet_scans', `select=total_transactions&wallet_address=eq.${wallet}&order=created_at.desc&limit=1`);
+      const myTx = Number(mine?.[0]?.total_transactions);
+      if (!mine?.length || !Number.isFinite(myTx)) {
+        return { ok: true, available: false, reason: 'no_scan', qualifier: 'among wallets scanned on Lendra' };
+      }
+      const rows = (await sbSelect('wallet_scans', `select=wallet_address,total_transactions&order=created_at.desc&limit=5000`)) || [];
+      const latestByWallet: Record<string, number> = {};
+      for (const r of rows) {
+        if (r.wallet_address && !(r.wallet_address in latestByWallet)) {
+          latestByWallet[r.wallet_address] = Number(r.total_transactions) || 0;
+        }
+      }
+      const values = Object.values(latestByWallet);
+      const sampleSize = values.length;
+      if (sampleSize < 2) {
+        return { ok: true, available: false, reason: 'insufficient_population', sample_size: sampleSize, qualifier: 'among wallets scanned on Lendra' };
+      }
+      const below = values.filter((v) => v < myTx).length;
+      const pct = Math.max(1, Math.min(99, Math.round((below / sampleSize) * 100))); // never an absolute 0/100
+      return {
+        ok: true,
+        available: true,
+        percentile: pct,
+        sample_size: sampleSize,
+        metric: 'recent_transaction_count',
+        qualifier: 'among wallets scanned on Lendra', // MANDATORY selection-bias qualifier (§5.6.8.2)
+      };
+    } catch (e: any) {
+      return reply.code(500).send({ ok: false, error: e.message });
+    }
+  });
+
   // ?? BORROW APPLY (legacy standalone route) ???????????????????????
   app.post('/api/borrow/apply', async (req, reply) => {
     const { wallet_address, amount_sol, duration_days } = req.body as any || {};
