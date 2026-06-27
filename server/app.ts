@@ -968,6 +968,52 @@ export async function buildApp(): Promise<FastifyInstance> {
     }
   });
 
+  // == SCORE TRAJECTORY (§5.6.8.1) ==================================
+  // Read-only. Charts each PERSISTED score by timestamp with its stored §7.2
+  // change reason. No back-filled or interpolated history — only real scans.
+  // renderable=false with <2 scans (frontend shows "scan again" empty state).
+  // Never a score input.
+  app.get('/api/wallet/score-trajectory', async (req, reply) => {
+    const wallet = (req.query as any)?.wallet;
+    if (!wallet) return reply.code(400).send({ ok: false, error: 'wallet required' });
+    try {
+      const scans = (await sbSelect('wallet_scans', `select=score,created_at,score_version&wallet_address=eq.${wallet}&order=created_at.asc&limit=100`)) || [];
+      const changes = (await sbSelect('score_change_events', `select=new_score,score_delta,reason,trigger_event,created_at&wallet_address=eq.${wallet}&order=created_at.asc&limit=100`)) || [];
+
+      // Attach the §7.2 change reason to each scan by minute bucket (persistScan
+      // writes the scan and its change event within the same minute).
+      const reasonByMinute: Record<string, any> = {};
+      for (const c of changes) {
+        const key = typeof c.created_at === 'string' ? c.created_at.slice(0, 16) : '';
+        if (key) reasonByMinute[key] = c;
+      }
+
+      const points = scans.map((s: any) => {
+        const key = typeof s.created_at === 'string' ? s.created_at.slice(0, 16) : '';
+        const ch = reasonByMinute[key];
+        return {
+          score: Number(s.score),
+          at: s.created_at,
+          score_version: s.score_version || null,
+          reason: ch?.reason || null,
+          delta: ch?.score_delta != null ? Number(ch.score_delta) : null,
+          trigger: ch?.trigger_event || null,
+        };
+      });
+
+      // Direction (up/down/steady) for the social card arrow (§9.3.1) — first->last.
+      let direction: 'up' | 'down' | 'steady' = 'steady';
+      if (points.length >= 2) {
+        const d = points[points.length - 1].score - points[0].score;
+        direction = d > 0 ? 'up' : d < 0 ? 'down' : 'steady';
+      }
+
+      return { ok: true, renderable: points.length >= 2, direction, count: points.length, points };
+    } catch (e: any) {
+      return reply.code(500).send({ ok: false, error: e.message });
+    }
+  });
+
   // ?? BORROW APPLY (legacy standalone route) ???????????????????????
   app.post('/api/borrow/apply', async (req, reply) => {
     const { wallet_address, amount_sol, duration_days } = req.body as any || {};
