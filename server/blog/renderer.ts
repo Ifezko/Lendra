@@ -173,7 +173,7 @@ img{max-width:100%;height:auto;display:block}
 <nav class="blog-nav"><div class="container blog-nav-inner">
 <a href="/" class="blog-nav-logo"><img src="/assets/lender-logo5x.png" alt="Lendra" /><span>Lendra</span></a>
 <div class="blog-nav-links">
-<a class="blog-nav-cta" href="/">Scan Wallet</a>
+<a class="blog-nav-cta" href="/?connect=wallet">Scan Wallet</a>
 </div>
 </div></nav>
 ${body}

@@ -1,7 +1,7 @@
 import React, { useMemo, useEffect, createContext, useContext, useState } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { ConnectionProvider, WalletProvider } from '@solana/wallet-adapter-react';
-import { WalletModalProvider } from '@solana/wallet-adapter-react-ui';
+import { WalletModalProvider, useWalletModal } from '@solana/wallet-adapter-react-ui';
 import { useWallet } from '@solana/wallet-adapter-react';
 import Header from './components/Header';
 import Sidebar from './components/Sidebar';
@@ -152,7 +152,21 @@ function useSolflareRecommended() {
 
 function AppContent() {
   const { publicKey, connected } = useWallet();
+  const { setVisible } = useWalletModal();
   const { loading, error, scoreData, computeScore } = useCreditScore();
+
+  // Deep-link from the blog "Scan Wallet" CTA: ?connect=wallet auto-opens the
+  // wallet-connect modal on arrival, then strips the param so a refresh won't
+  // reopen it.
+  useEffect(() => {
+    if (connected) return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('connect') === 'wallet') {
+      setVisible(true);
+      window.history.replaceState(null, '', window.location.pathname + window.location.hash);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const loan = useLoan();
   const privateMode = usePrivateMode();
   const ika = useIkaCrossChain();

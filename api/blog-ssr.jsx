@@ -247,7 +247,7 @@ img{max-width:100%}
       <span>Lendra</span>
     </a>
     <nav class="nav">
-      <a href="${APP_URL}" class="cta">Scan Wallet</a>
+      <a href="${APP_URL}/?connect=wallet" class="cta">Scan Wallet</a>
     </nav>
   </div>
 </header>

@@ -2615,7 +2615,7 @@ ${schemaJson ? `<script type="application/ld+json">${schemaJson}</script>` : ''}
         <span>Lendra</span>
       </a>
       <nav class="blog-nav">
-        <a href="${APP_URL}" class="btn-app">Scan Wallet</a>
+        <a href="${APP_URL}/?connect=wallet" class="btn-app">Scan Wallet</a>
       </nav>
     </div>
   </header>
