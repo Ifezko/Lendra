@@ -2610,17 +2610,12 @@ ${schemaJson ? `<script type="application/ld+json">${schemaJson}</script>` : ''}
 <body>
   <header class="blog-header">
     <div class="blog-header-inner">
-      <a href="${APP_URL}/blog" class="blog-header-logo">
+      <a href="${APP_URL}" class="blog-header-logo">
         <img src="${APP_URL}/assets/lender-logo5x.png" alt="Lendra" />
         <span>Lendra</span>
-        <small>Blog</small>
       </a>
       <nav class="blog-nav">
-        <a href="${APP_URL}">Home</a>
-        <a href="${APP_URL}/blog">Blog</a>
-        <a href="${APP_URL}/#how-it-works">How it works</a>
-        <a href="${APP_URL}/#faq">FAQ</a>
-        <a href="${APP_URL}" class="btn-app">Launch App</a>
+        <a href="${APP_URL}" class="btn-app">Scan Wallet</a>
       </nav>
     </div>
   </header>

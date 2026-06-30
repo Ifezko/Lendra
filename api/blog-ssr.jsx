@@ -242,16 +242,12 @@ img{max-width:100%}
 <body>
 <header class="hdr">
   <div class="hdr-in">
-    <a href="${APP_URL}/blog" class="logo">
+    <a href="${APP_URL}" class="logo">
       <img src="${APP_URL}/assets/lender-logo5x.png" alt="Lendra" width="32" height="32" />
-      <span>Lendra<em>Blog</em></span>
+      <span>Lendra</span>
     </a>
     <nav class="nav">
-      <a href="${APP_URL}">Home</a>
-      <a href="${APP_URL}/blog">Blog</a>
-      <a href="${APP_URL}/#how-it-works">How it works</a>
-      <a href="${APP_URL}/#faq">FAQ</a>
-      <a href="${APP_URL}" class="cta">Launch App →</a>
+      <a href="${APP_URL}" class="cta">Scan Wallet</a>
     </nav>
   </div>
 </header>
