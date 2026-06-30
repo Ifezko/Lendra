@@ -382,6 +382,88 @@ function CategorySelector({ categories, value, onChange, adminFetch, onCategoryC
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Author Selector with inline create (individual author profiles)
+// ─────────────────────────────────────────────────────────────────────────────
+
+function AuthorSelector({ authors, value, onChange, adminFetch, onAuthorCreated }) {
+  const [showCreate, setShowCreate] = useState(false);
+  const [form, setForm] = useState({ name: '', bio: '', avatar_url: '', x_handle: '' });
+  const [creating, setCreating] = useState(false);
+  const [err, setErr] = useState('');
+  const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
+
+  const handleCreate = async () => {
+    if (!form.name.trim()) { setErr('Name is required'); return; }
+    setCreating(true); setErr('');
+    try {
+      const res = await adminFetch('/api/admin/blog/authors', {
+        method: 'POST',
+        body: JSON.stringify({
+          name: form.name.trim(),
+          bio: form.bio.trim() || null,
+          avatar_url: form.avatar_url.trim() || null,
+          x_handle: form.x_handle.trim().replace(/^@/, '') || null,
+        }),
+      });
+      const data = await res.json();
+      if (data.error || !data.author) throw new Error(data.error || 'Failed to create author');
+      onAuthorCreated(data.author);
+      onChange(data.author.id);
+      setShowCreate(false);
+      setForm({ name: '', bio: '', avatar_url: '', x_handle: '' });
+    } catch (e) { setErr(e.message); } finally { setCreating(false); }
+  };
+
+  const inputCls = 'px-3 py-2 bg-[#0A0A12] border border-[#1E1E2A] rounded-xl text-sm text-white placeholder:text-slate-600 focus:outline-none focus:border-[#EC81FF]/50';
+  const selected = authors.find((a) => String(a.id) === String(value));
+
+  return (
+    <div className="space-y-2">
+      <div className="flex gap-2">
+        <Select value={value} onChange={(e) => onChange(e.target.value)} className="flex-1">
+          <option value="">— No author —</option>
+          {authors.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+        </Select>
+        <button type="button" onClick={() => setShowCreate((v) => !v)} title="New author" className="px-3 py-2 rounded-xl border border-[#1E1E2A] text-slate-400 hover:text-[#EC81FF] hover:border-[#EC81FF]/30 transition-colors">
+          <Plus className="w-4 h-4" />
+        </button>
+      </div>
+
+      {selected && !showCreate && (selected.avatar_url || selected.bio || selected.x_handle) && (
+        <div className="flex items-start gap-2.5 p-2.5 rounded-xl border border-[#1E1E2A] bg-[#0A0A12]">
+          {selected.avatar_url
+            ? <img src={selected.avatar_url} alt={selected.name} className="w-8 h-8 rounded-full object-cover flex-shrink-0" />
+            : <div className="w-8 h-8 rounded-full bg-[#EC81FF]/15 flex items-center justify-center text-[#EC81FF] text-xs font-bold flex-shrink-0">{selected.name?.[0] || '?'}</div>}
+          <div className="min-w-0">
+            <p className="text-xs font-semibold text-white">{selected.name}{selected.x_handle ? <span className="text-slate-500 font-normal"> · @{selected.x_handle}</span> : ''}</p>
+            {selected.bio && <p className="text-[11px] text-slate-500 line-clamp-2">{selected.bio}</p>}
+          </div>
+        </div>
+      )}
+
+      {showCreate && (
+        <div className="p-3 rounded-xl border border-[#EC81FF]/20 bg-[#EC81FF]/5 space-y-2">
+          <p className="text-[11px] font-semibold text-[#EC81FF] uppercase tracking-wider">New Author Profile</p>
+          <input value={form.name} onChange={(e) => set('name', e.target.value)} placeholder="Full name" className={`w-full ${inputCls}`} />
+          <div className="flex gap-2">
+            <input value={form.x_handle} onChange={(e) => set('x_handle', e.target.value)} placeholder="X handle (no @)" className={`flex-1 ${inputCls}`} />
+            <input value={form.avatar_url} onChange={(e) => set('avatar_url', e.target.value)} placeholder="Avatar URL" className={`flex-[2] ${inputCls}`} />
+          </div>
+          <textarea value={form.bio} onChange={(e) => set('bio', e.target.value)} rows={2} placeholder="Short bio (optional)" className={`w-full resize-y ${inputCls}`} />
+          <div className="flex items-center justify-end gap-2">
+            <button type="button" onClick={() => { setShowCreate(false); setErr(''); }} className="px-3 py-1.5 rounded-xl border border-[#1E1E2A] text-xs text-slate-400 hover:text-white transition">Cancel</button>
+            <button type="button" onClick={handleCreate} disabled={creating || !form.name.trim()} className="px-3 py-1.5 rounded-xl bg-[#EC81FF] text-black text-xs font-semibold hover:opacity-90 disabled:opacity-50 transition flex items-center gap-1.5">
+              {creating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Create author'}
+            </button>
+          </div>
+          {err && <p className="text-xs text-red-400">{err}</p>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // FAQ Editor
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -878,10 +960,13 @@ export default function BlogEditor() {
                 </Select>
               </Field>
               <Field label="Author">
-                <Select value={authorId} onChange={(e) => setAuthorId(e.target.value)}>
-                  <option value="">— No author —</option>
-                  {authors.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
-                </Select>
+                <AuthorSelector
+                  authors={authors}
+                  value={authorId}
+                  onChange={setAuthorId}
+                  adminFetch={adminFetch}
+                  onAuthorCreated={(a) => setAuthors((prev) => [...prev, a].sort((x, y) => (x.name || '').localeCompare(y.name || '')))}
+                />
               </Field>
               <div className="flex items-center justify-between py-1">
                 <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Featured</span>
