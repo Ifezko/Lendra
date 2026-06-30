@@ -85,7 +85,7 @@ img{max-width:100%;height:auto;display:block}
 .blog-nav-links{display:flex;align-items:center;gap:20px}
 .blog-nav-links a{color:#ADADB5;font-size:13px;font-weight:500;text-decoration:none;transition:color .15s}
 .blog-nav-links a:hover{color:#EC81FF}
-.blog-nav-cta{padding:7px 14px;border-radius:8px;background:#EC81FF;color:#0A0A0F !important;font-weight:600}
+.blog-nav-cta{padding:8px 18px;border-radius:8px;background:linear-gradient(135deg,#EC81FF 0%,#B84FCC 100%);color:#fff !important;font-weight:600}
 .blog-nav-cta:hover{opacity:.9;color:#0A0A0F !important}
 .blog-footer{border-top:1px solid #1E1E2A;padding:48px 0 28px;margin-top:60px}
 .blog-footer-grid{display:grid;grid-template-columns:1.6fr 1fr 1fr 1fr;gap:32px}

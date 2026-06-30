@@ -124,7 +124,7 @@ img{max-width:100%}
 .nav{display:flex;gap:20px;align-items:center}
 .nav a{color:var(--muted);font-size:13px;font-weight:500;transition:color .15s}
 .nav a:hover{color:#fff;text-decoration:none}
-.nav .cta{background:var(--accent);color:#0A0A0F;padding:7px 18px;border-radius:10px;font-weight:700;font-size:12px}
+.nav .cta{background:linear-gradient(135deg,#EC81FF 0%,#B84FCC 100%);color:#fff;padding:8px 20px;border-radius:10px;font-weight:700;font-size:12px}
 .nav .cta:hover{opacity:.9;text-decoration:none}
 
 /* Layout */

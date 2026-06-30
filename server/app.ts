@@ -2526,7 +2526,7 @@ ${schemaJson ? `<script type="application/ld+json">${schemaJson}</script>` : ''}
   .blog-nav { display:flex; gap:20px; align-items:center; }
   .blog-nav a { color:var(--brand-muted); font-size:14px; font-weight:500; transition:color 0.15s; }
   .blog-nav a:hover { color:#fff; text-decoration:none; }
-  .btn-app { background:var(--brand-accent); color:#fff; padding:8px 20px; border-radius:10px; font-weight:600; font-size:13px; display:inline-flex; }
+  .btn-app { background:linear-gradient(135deg,#EC81FF 0%,#B84FCC 100%); color:#fff; padding:8px 20px; border-radius:10px; font-weight:600; font-size:13px; display:inline-flex; }
   .btn-app:hover { opacity:0.9; text-decoration:none; }
 
   .blog-container { max-width:800px; margin:0 auto; padding:40px 24px 80px; }
